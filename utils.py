@@ -8,8 +8,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict
 from config import (
     RASTREO_API_URL, 
-    FIREBASE_SERVER_KEY, 
-    FIREBASE_FCM_URL,
+    ONESIGNAL_API_KEY,
+    ONESIGNAL_APP_ID,
     TIEMPOS_VIAJE,
     HORAS_ANTES_LLEGADA,
     HORAS_ENTRE_VERIFICACIONES,
@@ -155,14 +155,14 @@ def calcular_proxima_verificacion(
         return datetime.now() + timedelta(hours=2)
 
 
-# ============ FIREBASE CLOUD MESSAGING ============
+# ============ ONESIGNAL PUSH NOTIFICATIONS ============
 
 def enviar_push_notification(token_fcm: str, titulo: str, mensaje: str) -> bool:
     """
-    Envía una notificación push a través de Firebase Cloud Messaging
+    Envía una notificación push a través de OneSignal
     
     Args:
-        token_fcm: Token del dispositivo
+        token_fcm: Player ID de OneSignal (token del dispositivo)
         titulo: Título de la notificación
         mensaje: Mensaje de la notificación
     
@@ -170,30 +170,27 @@ def enviar_push_notification(token_fcm: str, titulo: str, mensaje: str) -> bool:
         True si se envió exitosamente, False en caso contrario
     """
     try:
-        if not FIREBASE_SERVER_KEY:
-            logger.warning("⚠️ FIREBASE_SERVER_KEY no configurada")
+        if not ONESIGNAL_API_KEY or not ONESIGNAL_APP_ID:
+            logger.warning("⚠️ OneSignal no configurado (API_KEY o APP_ID faltante)")
             return False
         
-        logger.info(f"📲 Enviando push: {titulo}")
+        logger.info(f"📲 Enviando push OneSignal: {titulo}")
         
         headers = {
-            "Authorization": f"key={FIREBASE_SERVER_KEY}",
+            "Authorization": f"Basic {ONESIGNAL_API_KEY}",
             "Content-Type": "application/json"
         }
         
         payload = {
-            "to": token_fcm,
-            "notification": {
-                "title": titulo,
-                "body": mensaje,
-                "sound": "default",
-                "priority": "high"
-            },
-            "priority": "high"
+            "app_id": ONESIGNAL_APP_ID,
+            "include_player_ids": [token_fcm],
+            "headings": {"en": titulo},
+            "contents": {"en": mensaje},
+            "priority": 10
         }
         
         response = requests.post(
-            FIREBASE_FCM_URL,
+            "https://onesignal.com/api/v1/notifications",
             json=payload,
             headers=headers,
             timeout=10
@@ -201,14 +198,14 @@ def enviar_push_notification(token_fcm: str, titulo: str, mensaje: str) -> bool:
         
         if response.status_code == 200:
             result = response.json()
-            if result.get("success") == 1:
-                logger.info(f"✅ Push enviado exitosamente")
+            if result.get("recipients", 0) > 0:
+                logger.info(f"✅ Push enviado exitosamente via OneSignal")
                 return True
             else:
-                logger.error(f"❌ FCM respondió con error: {result}")
+                logger.error(f"❌ OneSignal: No se pudo enviar (sin recipients): {result}")
                 return False
         else:
-            logger.error(f"❌ Error HTTP al enviar push: {response.status_code}")
+            logger.error(f"❌ Error HTTP al enviar push: {response.status_code} - {response.text}")
             return False
             
     except Exception as e:

@@ -7,14 +7,15 @@ import os
 
 # ============ CONFIGURACIÓN GENERAL ============
 
-# Firebase Cloud Messaging
-FIREBASE_SERVER_KEY = os.environ.get("FIREBASE_SERVER_KEY", "")
-FIREBASE_FCM_URL = "https://fcm.googleapis.com/fcm/send"
+# OneSignal Push Notifications
+ONESIGNAL_API_KEY = os.environ.get("ONESIGNAL_API_KEY", "")
+ONESIGNAL_APP_ID = os.environ.get("ONESIGNAL_APP_ID", "")
+ONESIGNAL_API_URL = "https://onesignal.com/api/v1/notifications"
 
 # URL de la API de rastreo (tu API existente)
 RASTREO_API_URL = os.environ.get(
     "RASTREO_API_URL",
-    "https://rapido-ochoa-api.onrender.com/api/rastreo"
+    "https://rapido-ochoa-api-fast.onrender.com/api/rastreo"
 )
 
 # Configuración de verificaciones
