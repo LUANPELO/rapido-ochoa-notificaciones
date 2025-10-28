@@ -1,0 +1,38 @@
+services:
+  # API Principal de Notificaciones
+  - type: web
+    name: rapido-ochoa-notificaciones
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: FIREBASE_SERVER_KEY
+        sync: false
+      - key: RASTREO_API_URL
+        value: https://rapido-ochoa-api.onrender.com/api/rastreo
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rapido-ochoa-db
+          property: connectionString
+
+  # Cron Job para verificaciones cada 2 horas
+  - type: cron
+    name: rapido-ochoa-verificador
+    runtime: python
+    plan: free
+    schedule: "0 */2 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -c "import requests; requests.post('https://rapido-ochoa-notificaciones.onrender.com/api/verificar')"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+databases:
+  # PostgreSQL gratis (500MB)
+  - name: rapido-ochoa-db
+    plan: free
+    databaseName: rastreo_notificaciones
+    user: rastreo_user
