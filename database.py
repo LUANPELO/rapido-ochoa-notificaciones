@@ -2,7 +2,7 @@
 Modelos de Base de Datos PostgreSQL
 """
 
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, ForeignKey, Text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, ForeignKey, Text, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -140,52 +140,48 @@ def _migrar_onesignal_user_id():
     import logging
     logger = logging.getLogger(__name__)
     
-    db = SessionLocal()
-    
     try:
         logger.info("🔄 Verificando migración de onesignal_user_id...")
         
-        # Verificar si la columna ya existe
-        result = db.execute(
-            """
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name='suscripciones' 
-            AND column_name='onesignal_user_id'
-            """
-        )
-        
-        if result.fetchone():
-            logger.info("✅ Columna onesignal_user_id ya existe")
-            return
-        
-        # Agregar la columna si no existe
-        logger.info("📝 Agregando columna onesignal_user_id a tabla suscripciones...")
-        
-        db.execute(
-            """
-            ALTER TABLE suscripciones 
-            ADD COLUMN onesignal_user_id VARCHAR(255)
-            """
-        )
-        
-        # Crear índice para mejor performance
-        db.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_onesignal_user_id 
-            ON suscripciones(onesignal_user_id)
-            """
-        )
-        
-        db.commit()
-        logger.info("✅ Migración completada: onesignal_user_id agregado exitosamente")
+        with engine.connect() as conn:
+            # Verificar si la columna ya existe
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='suscripciones' 
+                AND column_name='onesignal_user_id'
+            """))
+            
+            if result.fetchone():
+                logger.info("✅ Columna onesignal_user_id ya existe")
+                return
+            
+            # Agregar la columna si no existe
+            logger.info("📝 Agregando columna onesignal_user_id...")
+            
+            conn.execute(text("""
+                ALTER TABLE suscripciones 
+                ADD COLUMN onesignal_user_id VARCHAR(255)
+            """))
+            
+            # Crear índice
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_onesignal_user_id 
+                ON suscripciones(onesignal_user_id)
+            """))
+            
+            # Hacer token_fcm opcional
+            conn.execute(text("""
+                ALTER TABLE suscripciones 
+                ALTER COLUMN token_fcm DROP NOT NULL
+            """))
+            
+            conn.commit()
+            logger.info("✅ Migración completada: onesignal_user_id agregado exitosamente")
         
     except Exception as e:
-        logger.error(f"❌ Error en migración: {e}")
-        db.rollback()
+        logger.warning(f"⚠️ Error en migración (puede que ya esté aplicada): {e}")
         # No lanzar excepción para no romper el inicio de la app
-    finally:
-        db.close()
 
 
 def _insertar_datos_ciudades():
