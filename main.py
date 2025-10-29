@@ -35,8 +35,8 @@ app.add_middleware(
 # Modelos de Request/Response
 class SuscripcionCreate(BaseModel):
     numero_guia: str
-    onesignal_user_id: str  # ✅ ACTUALIZADO: Subscription ID de OneSignal
-    token_fcm: Optional[str] = None  # ✅ Opcional para compatibilidad
+    onesignal_user_id: str
+    token_fcm: Optional[str] = None
     telefono: Optional[str] = None
 
 class SuscripcionResponse(BaseModel):
@@ -105,7 +105,7 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
         # Verificar si ya existe suscripción activa para este usuario y guía
         suscripcion_existente = db.query(Suscripcion).filter(
             Suscripcion.numero_guia == data.numero_guia,
-            Suscripcion.onesignal_user_id == data.onesignal_user_id,  # ✅ ACTUALIZADO
+            Suscripcion.onesignal_user_id == data.onesignal_user_id,
             Suscripcion.activo == True
         ).first()
         
@@ -132,8 +132,8 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
         # Crear suscripción
         nueva_suscripcion = Suscripcion(
             numero_guia=data.numero_guia,
-            onesignal_user_id=data.onesignal_user_id,  # ✅ ACTUALIZADO
-            token_fcm=data.token_fcm,  # Guardar token también por compatibilidad
+            onesignal_user_id=data.onesignal_user_id,
+            token_fcm=data.token_fcm,
             telefono=data.telefono,
             origen=info_guia.get('origen'),
             destino=info_guia.get('destino'),
@@ -159,14 +159,10 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
         logger.info(f"✅ Suscripción creada: ID {nueva_suscripcion.id}")
         logger.info(f"📅 Próxima verificación: {proxima}")
         
-        # ✅ ACTUALIZADO: Enviar notificación de confirmación usando onesignal_user_id
-        background_tasks.add_task(
-            enviar_push_notification,
-            data.onesignal_user_id,  # ✅ Usar onesignal_user_id
-            "📦 Suscripción Activada",
-            f"Te notificaremos cuando la guía {data.numero_guia} llegue a destino",
-            {"numero_guia": data.numero_guia, "tipo": "confirmacion"}  # ✅ Datos extra
-        )
+        # ✅ NO ENVIAR NOTIFICACIÓN DE CONFIRMACIÓN
+        # Razón: OneSignal necesita unos segundos para sincronizar el estado del usuario
+        # La app ya muestra un SnackBar verde de confirmación, es suficiente.
+        # Las notificaciones importantes (llegada a destino) SÍ se enviarán correctamente.
         
         return SuscripcionResponse(
             id=nueva_suscripcion.id,
@@ -292,17 +288,17 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                 if "RECLAME EN OFICINA" in estado_nuevo.upper():
                     logger.info(f"🎯 ¡Guía {suscripcion.numero_guia} llegó a destino!")
                     
-                    # ✅ ACTUALIZADO: Enviar notificación usando onesignal_user_id
+                    # ✅ ESTA NOTIFICACIÓN SÍ SE ENVÍA (la importante)
                     background_tasks.add_task(
                         enviar_push_notification,
-                        suscripcion.onesignal_user_id,  # ✅ Usar onesignal_user_id
+                        suscripcion.onesignal_user_id,
                         "🎉 ¡Tu encomienda llegó!",
                         f"La guía {suscripcion.numero_guia} está disponible para recoger en oficina",
                         {
                             "numero_guia": suscripcion.numero_guia,
                             "tipo": "llegada",
                             "estado": "RECLAME EN OFICINA"
-                        }  # ✅ Datos extra para la app
+                        }
                     )
                     
                     # Marcar para limpieza (se borrará en 48h)
