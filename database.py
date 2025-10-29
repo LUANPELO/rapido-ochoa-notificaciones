@@ -121,12 +121,71 @@ def init_db():
         Base.metadata.create_all(bind=engine)
         logger.info("✅ Tablas creadas exitosamente")
         
+        # ✅ MIGRACIÓN: Agregar columna onesignal_user_id si no existe
+        _migrar_onesignal_user_id()
+        
         # Opcional: Insertar datos iniciales de ciudades
         _insertar_datos_ciudades()
         
     except Exception as e:
         logger.error(f"❌ Error creando tablas: {e}")
         raise
+
+
+def _migrar_onesignal_user_id():
+    """
+    Migración: Agrega la columna onesignal_user_id a la tabla suscripciones
+    Solo si no existe (para retrocompatibilidad)
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    db = SessionLocal()
+    
+    try:
+        logger.info("🔄 Verificando migración de onesignal_user_id...")
+        
+        # Verificar si la columna ya existe
+        result = db.execute(
+            """
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='suscripciones' 
+            AND column_name='onesignal_user_id'
+            """
+        )
+        
+        if result.fetchone():
+            logger.info("✅ Columna onesignal_user_id ya existe")
+            return
+        
+        # Agregar la columna si no existe
+        logger.info("📝 Agregando columna onesignal_user_id a tabla suscripciones...")
+        
+        db.execute(
+            """
+            ALTER TABLE suscripciones 
+            ADD COLUMN onesignal_user_id VARCHAR(255)
+            """
+        )
+        
+        # Crear índice para mejor performance
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_onesignal_user_id 
+            ON suscripciones(onesignal_user_id)
+            """
+        )
+        
+        db.commit()
+        logger.info("✅ Migración completada: onesignal_user_id agregado exitosamente")
+        
+    except Exception as e:
+        logger.error(f"❌ Error en migración: {e}")
+        db.rollback()
+        # No lanzar excepción para no romper el inicio de la app
+    finally:
+        db.close()
 
 
 def _insertar_datos_ciudades():
