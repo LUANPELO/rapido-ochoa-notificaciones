@@ -34,7 +34,8 @@ class Suscripcion(Base):
     # Identificación
     id = Column(Integer, primary_key=True, index=True)
     numero_guia = Column(String(50), nullable=False, index=True)
-    token_fcm = Column(String(255), nullable=False)  # Token de Firebase Cloud Messaging
+    onesignal_user_id = Column(String(255), nullable=True, index=True)  # ✅ NUEVO: ID de usuario OneSignal
+    token_fcm = Column(String(255), nullable=True)  # Ahora opcional si usas OneSignal
     telefono = Column(String(20), nullable=True)
     
     # Información de la guía
