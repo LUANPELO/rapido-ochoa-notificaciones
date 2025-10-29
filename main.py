@@ -35,7 +35,8 @@ app.add_middleware(
 # Modelos de Request/Response
 class SuscripcionCreate(BaseModel):
     numero_guia: str
-    token_fcm: str
+    onesignal_user_id: str  # ✅ ACTUALIZADO: Subscription ID de OneSignal
+    token_fcm: Optional[str] = None  # ✅ Opcional para compatibilidad
     telefono: Optional[str] = None
 
 class SuscripcionResponse(BaseModel):
@@ -72,7 +73,7 @@ def root():
         "caracteristicas": [
             "Verificación optimizada por distancia",
             "PostgreSQL persistente",
-            "Firebase Cloud Messaging",
+            "OneSignal Push Notifications",
             "Limpieza automática"
         ],
         "endpoints": {
@@ -91,7 +92,8 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
     Body:
     {
         "numero_guia": "E121101188",
-        "token_fcm": "token_firebase_del_dispositivo",
+        "onesignal_user_id": "uuid-del-usuario-onesignal",
+        "token_fcm": "token_firebase" (opcional),
         "telefono": "+573001234567" (opcional)
     }
     """
@@ -100,10 +102,10 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
     try:
         logger.info(f"📦 Nueva suscripción: {data.numero_guia}")
         
-        # Verificar si ya existe suscripción activa
+        # Verificar si ya existe suscripción activa para este usuario y guía
         suscripcion_existente = db.query(Suscripcion).filter(
             Suscripcion.numero_guia == data.numero_guia,
-            Suscripcion.token_fcm == data.token_fcm,
+            Suscripcion.onesignal_user_id == data.onesignal_user_id,  # ✅ ACTUALIZADO
             Suscripcion.activo == True
         ).first()
         
@@ -130,7 +132,8 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
         # Crear suscripción
         nueva_suscripcion = Suscripcion(
             numero_guia=data.numero_guia,
-            token_fcm=data.token_fcm,
+            onesignal_user_id=data.onesignal_user_id,  # ✅ ACTUALIZADO
+            token_fcm=data.token_fcm,  # Guardar token también por compatibilidad
             telefono=data.telefono,
             origen=info_guia.get('origen'),
             destino=info_guia.get('destino'),
@@ -156,12 +159,13 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
         logger.info(f"✅ Suscripción creada: ID {nueva_suscripcion.id}")
         logger.info(f"📅 Próxima verificación: {proxima}")
         
-        # Enviar notificación de confirmación en background
+        # ✅ ACTUALIZADO: Enviar notificación de confirmación usando onesignal_user_id
         background_tasks.add_task(
             enviar_push_notification,
-            data.token_fcm,
-            "Suscripción Activada",
-            f"Te notificaremos cuando la guía {data.numero_guia} llegue a RECLAME EN OFICINA"
+            data.onesignal_user_id,  # ✅ Usar onesignal_user_id
+            "📦 Suscripción Activada",
+            f"Te notificaremos cuando la guía {data.numero_guia} llegue a destino",
+            {"numero_guia": data.numero_guia, "tipo": "confirmacion"}  # ✅ Datos extra
         )
         
         return SuscripcionResponse(
@@ -288,12 +292,17 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                 if "RECLAME EN OFICINA" in estado_nuevo.upper():
                     logger.info(f"🎯 ¡Guía {suscripcion.numero_guia} llegó a destino!")
                     
-                    # Enviar notificación
+                    # ✅ ACTUALIZADO: Enviar notificación usando onesignal_user_id
                     background_tasks.add_task(
                         enviar_push_notification,
-                        suscripcion.token_fcm,
-                        "¡Tu encomienda llegó! 📦",
-                        f"La guía {suscripcion.numero_guia} está lista para recoger en oficina"
+                        suscripcion.onesignal_user_id,  # ✅ Usar onesignal_user_id
+                        "🎉 ¡Tu encomienda llegó!",
+                        f"La guía {suscripcion.numero_guia} está disponible para recoger en oficina",
+                        {
+                            "numero_guia": suscripcion.numero_guia,
+                            "tipo": "llegada",
+                            "estado": "RECLAME EN OFICINA"
+                        }  # ✅ Datos extra para la app
                     )
                     
                     # Marcar para limpieza (se borrará en 48h)
