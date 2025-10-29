@@ -1,0 +1,37 @@
+name: Verificar Guías Automáticamente
+
+on:
+  schedule:
+    # Ejecutar cada 2 horas (minuto 0 de las horas pares)
+    - cron: '0 */2 * * *'
+  workflow_dispatch: # Permite ejecutar manualmente desde GitHub
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Verificar guías
+        run: |
+          echo "🔍 Iniciando verificación de guías..."
+          
+          response=$(curl -X POST \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            https://rapido-ochoa-notificaciones.onrender.com/api/verificar)
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          if [ "$http_code" -eq 200 ]; then
+            echo "✅ Verificación exitosa"
+            echo "$body"
+          else
+            echo "❌ Error en verificación (HTTP $http_code)"
+            echo "$body"
+            exit 1
+          fi
+      
+      - name: 📊 Resumen
+        if: always()
+        run: echo "Verificación completada a las $(date)"
