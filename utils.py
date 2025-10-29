@@ -157,14 +157,20 @@ def calcular_proxima_verificacion(
 
 # ============ ONESIGNAL PUSH NOTIFICATIONS ============
 
-def enviar_push_notification(token_fcm: str, titulo: str, mensaje: str) -> bool:
+def enviar_push_notification(
+    onesignal_user_id: str, 
+    titulo: str, 
+    mensaje: str, 
+    datos_extra: dict = None
+) -> bool:
     """
-    Envía una notificación push a través de OneSignal
+    Envía una notificación push a través de OneSignal API v5
     
     Args:
-        token_fcm: Player ID de OneSignal (token del dispositivo)
+        onesignal_user_id: Subscription ID de OneSignal (UUID del usuario)
         titulo: Título de la notificación
         mensaje: Mensaje de la notificación
+        datos_extra: Datos adicionales para la app (opcional)
     
     Returns:
         True si se envió exitosamente, False en caso contrario
@@ -174,20 +180,32 @@ def enviar_push_notification(token_fcm: str, titulo: str, mensaje: str) -> bool:
             logger.warning("⚠️ OneSignal no configurado (API_KEY o APP_ID faltante)")
             return False
         
+        # Validar que el user_id no esté vacío
+        if not onesignal_user_id or onesignal_user_id.strip() == "":
+            logger.error("❌ OneSignal User ID está vacío")
+            return False
+        
         logger.info(f"📲 Enviando push OneSignal: {titulo}")
+        logger.info(f"🎯 Destinatario: {onesignal_user_id}")
         
         headers = {
             "Authorization": f"Basic {ONESIGNAL_API_KEY}",
             "Content-Type": "application/json"
         }
         
+        # ✅ USAR LA NUEVA API DE ONESIGNAL 5.x
         payload = {
             "app_id": ONESIGNAL_APP_ID,
-            "include_player_ids": [token_fcm],
+            "include_subscription_ids": [onesignal_user_id],  # ✅ API nueva
             "headings": {"en": titulo},
             "contents": {"en": mensaje},
             "priority": 10
         }
+        
+        # Agregar datos adicionales si existen
+        if datos_extra:
+            payload["data"] = datos_extra
+            logger.info(f"📦 Datos extra incluidos: {datos_extra}")
         
         response = requests.post(
             "https://onesignal.com/api/v1/notifications",
@@ -200,9 +218,10 @@ def enviar_push_notification(token_fcm: str, titulo: str, mensaje: str) -> bool:
             result = response.json()
             if result.get("recipients", 0) > 0:
                 logger.info(f"✅ Push enviado exitosamente via OneSignal")
+                logger.info(f"📊 Recipients: {result.get('recipients', 0)}")
                 return True
             else:
-                logger.error(f"❌ OneSignal: No se pudo enviar (sin recipients): {result}")
+                logger.warning(f"⚠️ OneSignal: No se pudo enviar (sin recipients): {result}")
                 return False
         else:
             logger.error(f"❌ Error HTTP al enviar push: {response.status_code} - {response.text}")
