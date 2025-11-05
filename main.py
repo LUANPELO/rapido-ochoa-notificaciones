@@ -159,11 +159,6 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
         logger.info(f"✅ Suscripción creada: ID {nueva_suscripcion.id}")
         logger.info(f"📅 Próxima verificación: {proxima}")
         
-        # ✅ NO ENVIAR NOTIFICACIÓN DE CONFIRMACIÓN
-        # Razón: OneSignal necesita unos segundos para sincronizar el estado del usuario
-        # La app ya muestra un SnackBar verde de confirmación, es suficiente.
-        # Las notificaciones importantes (llegada a destino) SÍ se enviarán correctamente.
-        
         return SuscripcionResponse(
             id=nueva_suscripcion.id,
             numero_guia=nueva_suscripcion.numero_guia,
@@ -260,6 +255,7 @@ async def verificar_guias(background_tasks: BackgroundTasks):
         
         verificadas = 0
         notificaciones_enviadas = 0
+        errores_timeout = 0
         
         for suscripcion in suscripciones:
             try:
@@ -268,6 +264,9 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                 
                 if not info_guia:
                     logger.warning(f"⚠️ No se pudo consultar guía {suscripcion.numero_guia}")
+                    # ✅ Programar reintento en 1 hora
+                    suscripcion.proxima_verificacion = ahora + timedelta(hours=1)
+                    errores_timeout += 1
                     continue
                 
                 estado_anterior = suscripcion.estado_actual
@@ -288,7 +287,7 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                 if "RECLAME EN OFICINA" in estado_nuevo.upper():
                     logger.info(f"🎯 ¡Guía {suscripcion.numero_guia} llegó a destino!")
                     
-                    # ✅ ESTA NOTIFICACIÓN SÍ SE ENVÍA (la importante)
+                    # Enviar notificación
                     background_tasks.add_task(
                         enviar_push_notification,
                         suscripcion.onesignal_user_id,
@@ -322,29 +321,53 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                 
             except Exception as e:
                 logger.error(f"❌ Error verificando {suscripcion.numero_guia}: {e}")
+                # ✅ Programar reintento en 1 hora
+                suscripcion.proxima_verificacion = ahora + timedelta(hours=1)
                 continue
         
         db.commit()
         
-        # Limpieza: eliminar suscripciones entregadas hace más de 48h
+        # ✅ LIMPIEZA CORREGIDA: Eliminar en el orden correcto
         limite_limpieza = ahora - timedelta(hours=48)
-        eliminadas = db.query(Suscripcion).filter(
+        
+        # 1. Obtener IDs de suscripciones a eliminar
+        suscripciones_a_eliminar = db.query(Suscripcion.id).filter(
             Suscripcion.fecha_entrega != None,
             Suscripcion.fecha_entrega < limite_limpieza
-        ).delete()
+        ).all()
+        
+        ids_a_eliminar = [s.id for s in suscripciones_a_eliminar]
+        
+        historial_eliminado = 0
+        suscripciones_eliminadas = 0
+        
+        if ids_a_eliminar:
+            # 2. Eliminar primero el historial (hijo)
+            historial_eliminado = db.query(HistorialVerificacion).filter(
+                HistorialVerificacion.suscripcion_id.in_(ids_a_eliminar)
+            ).delete(synchronize_session=False)
+            
+            # 3. Luego eliminar las suscripciones (padre)
+            suscripciones_eliminadas = db.query(Suscripcion).filter(
+                Suscripcion.id.in_(ids_a_eliminar)
+            ).delete(synchronize_session=False)
         
         db.commit()
         
         logger.info(f"✅ Verificación completada:")
         logger.info(f"   - Verificadas: {verificadas}")
         logger.info(f"   - Notificaciones enviadas: {notificaciones_enviadas}")
-        logger.info(f"   - Registros eliminados: {eliminadas}")
+        logger.info(f"   - Errores/Timeouts: {errores_timeout}")
+        logger.info(f"   - Historial eliminado: {historial_eliminado}")
+        logger.info(f"   - Suscripciones eliminadas: {suscripciones_eliminadas}")
         
         return {
             "timestamp": ahora.isoformat(),
             "guias_verificadas": verificadas,
             "notificaciones_enviadas": notificaciones_enviadas,
-            "registros_eliminados": eliminadas
+            "errores_timeout": errores_timeout,
+            "historial_eliminado": historial_eliminado,
+            "suscripciones_eliminadas": suscripciones_eliminadas
         }
         
     except Exception as e:
@@ -396,3 +419,23 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+```
+
+---
+
+## ✅ **LOS DEMÁS ARCHIVOS ESTÁN CORRECTOS:**
+
+- ✅ **`database.py`** - Está bien configurado
+- ✅ **`config.py`** - No necesita cambios
+- ✅ **`encomiendas_page.dart`** - Está perfecto, usa el ID correctamente
+
+---
+
+## 📝 **Commit Message:**
+```
+fix(cron): corregir eliminación en cascada y manejo de timeouts en verificación
+
+- Eliminar historial antes de suscripciones para evitar error FK
+- Agregar reintento de 1 hora cuando hay timeout en API
+- Mejorar logs con contadores separados de errores
+- Sistema robusto ante fallos de red
