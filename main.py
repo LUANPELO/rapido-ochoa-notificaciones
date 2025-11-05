@@ -32,7 +32,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Modelos de Request/Response
 class SuscripcionCreate(BaseModel):
     numero_guia: str
     onesignal_user_id: str
@@ -55,14 +54,11 @@ class EstadisticasResponse(BaseModel):
     completadas: int
     verificaciones_pendientes: int
 
-# Inicializar BD al arrancar
 @app.on_event("startup")
 async def startup_event():
     logger.info("🚀 Iniciando API de Notificaciones...")
     init_db()
     logger.info("✅ Base de datos inicializada")
-
-# ============ ENDPOINTS PRINCIPALES ============
 
 @app.get("/")
 def root():
@@ -86,23 +82,11 @@ def root():
 
 @app.post("/api/suscribir", response_model=SuscripcionResponse)
 async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTasks):
-    """
-    Suscribe un cliente a las notificaciones de una guía
-    
-    Body:
-    {
-        "numero_guia": "E121101188",
-        "onesignal_user_id": "uuid-del-usuario-onesignal",
-        "token_fcm": "token_firebase" (opcional),
-        "telefono": "+573001234567" (opcional)
-    }
-    """
     db = SessionLocal()
     
     try:
         logger.info(f"📦 Nueva suscripción: {data.numero_guia}")
         
-        # Verificar si ya existe suscripción activa para este usuario y guía
         suscripcion_existente = db.query(Suscripcion).filter(
             Suscripcion.numero_guia == data.numero_guia,
             Suscripcion.onesignal_user_id == data.onesignal_user_id,
@@ -122,14 +106,12 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
                 proxima_verificacion=suscripcion_existente.proxima_verificacion
             )
         
-        # Consultar información inicial de la guía
         logger.info(f"🔍 Consultando información inicial de {data.numero_guia}")
         info_guia = consultar_guia_rastreo(data.numero_guia)
         
         if not info_guia:
             raise HTTPException(status_code=404, detail=f"No se encontró la guía {data.numero_guia}")
         
-        # Crear suscripción
         nueva_suscripcion = Suscripcion(
             numero_guia=data.numero_guia,
             onesignal_user_id=data.onesignal_user_id,
@@ -143,7 +125,6 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
             destinatario=info_guia.get('destinatario_nombre')
         )
         
-        # Calcular próxima verificación
         proxima = calcular_proxima_verificacion(
             estado_actual=nueva_suscripcion.estado_actual,
             origen=nueva_suscripcion.origen,
@@ -181,7 +162,6 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
 
 @app.get("/api/suscripcion/{numero_guia}", response_model=SuscripcionResponse)
 def obtener_estado_suscripcion(numero_guia: str):
-    """Consulta el estado actual de una suscripción"""
     db = SessionLocal()
     
     try:
@@ -209,7 +189,6 @@ def obtener_estado_suscripcion(numero_guia: str):
 
 @app.delete("/api/suscripcion/{numero_guia}")
 def cancelar_suscripcion(numero_guia: str):
-    """Cancela una suscripción activa"""
     db = SessionLocal()
     
     try:
@@ -231,21 +210,14 @@ def cancelar_suscripcion(numero_guia: str):
     finally:
         db.close()
 
-# ============ ENDPOINT PARA CRON JOB ============
-
 @app.post("/api/verificar")
 async def verificar_guias(background_tasks: BackgroundTasks):
-    """
-    Endpoint ejecutado por Render Cron Job cada 2 horas
-    Verifica las guías que requieren actualización
-    """
     db = SessionLocal()
     
     try:
         ahora = datetime.now()
         logger.info(f"⏰ Iniciando verificación de guías: {ahora}")
         
-        # Obtener suscripciones que necesitan verificación
         suscripciones = db.query(Suscripcion).filter(
             Suscripcion.activo == True,
             Suscripcion.proxima_verificacion <= ahora
@@ -259,12 +231,10 @@ async def verificar_guias(background_tasks: BackgroundTasks):
         
         for suscripcion in suscripciones:
             try:
-                # Consultar estado actual
                 info_guia = consultar_guia_rastreo(suscripcion.numero_guia)
                 
                 if not info_guia:
                     logger.warning(f"⚠️ No se pudo consultar guía {suscripcion.numero_guia}")
-                    # ✅ Programar reintento en 1 hora
                     suscripcion.proxima_verificacion = ahora + timedelta(hours=1)
                     errores_timeout += 1
                     continue
@@ -272,22 +242,18 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                 estado_anterior = suscripcion.estado_actual
                 estado_nuevo = info_guia.get('estado_actual')
                 
-                # Registrar verificación
                 historial = HistorialVerificacion(
                     suscripcion_id=suscripcion.id,
                     estado_encontrado=estado_nuevo
                 )
                 db.add(historial)
                 
-                # Actualizar estado
                 suscripcion.estado_actual = estado_nuevo
                 suscripcion.ultima_verificacion = ahora
                 
-                # ¿Llegó a RECLAME EN OFICINA?
                 if "RECLAME EN OFICINA" in estado_nuevo.upper():
                     logger.info(f"🎯 ¡Guía {suscripcion.numero_guia} llegó a destino!")
                     
-                    # Enviar notificación
                     background_tasks.add_task(
                         enviar_push_notification,
                         suscripcion.onesignal_user_id,
@@ -300,13 +266,11 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                         }
                     )
                     
-                    # Marcar para limpieza (se borrará en 48h)
                     suscripcion.fecha_entrega = ahora
                     suscripcion.proxima_verificacion = None
                     notificaciones_enviadas += 1
                     
                 else:
-                    # Calcular próxima verificación
                     proxima = calcular_proxima_verificacion(
                         estado_actual=estado_nuevo,
                         origen=suscripcion.origen,
@@ -321,16 +285,13 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                 
             except Exception as e:
                 logger.error(f"❌ Error verificando {suscripcion.numero_guia}: {e}")
-                # ✅ Programar reintento en 1 hora
                 suscripcion.proxima_verificacion = ahora + timedelta(hours=1)
                 continue
         
         db.commit()
         
-        # ✅ LIMPIEZA CORREGIDA: Eliminar en el orden correcto
         limite_limpieza = ahora - timedelta(hours=48)
         
-        # 1. Obtener IDs de suscripciones a eliminar
         suscripciones_a_eliminar = db.query(Suscripcion.id).filter(
             Suscripcion.fecha_entrega != None,
             Suscripcion.fecha_entrega < limite_limpieza
@@ -342,12 +303,10 @@ async def verificar_guias(background_tasks: BackgroundTasks):
         suscripciones_eliminadas = 0
         
         if ids_a_eliminar:
-            # 2. Eliminar primero el historial (hijo)
             historial_eliminado = db.query(HistorialVerificacion).filter(
                 HistorialVerificacion.suscripcion_id.in_(ids_a_eliminar)
             ).delete(synchronize_session=False)
             
-            # 3. Luego eliminar las suscripciones (padre)
             suscripciones_eliminadas = db.query(Suscripcion).filter(
                 Suscripcion.id.in_(ids_a_eliminar)
             ).delete(synchronize_session=False)
@@ -377,11 +336,8 @@ async def verificar_guias(background_tasks: BackgroundTasks):
     finally:
         db.close()
 
-# ============ ENDPOINTS DE ADMINISTRACIÓN ============
-
 @app.get("/api/stats", response_model=EstadisticasResponse)
 def obtener_estadisticas():
-    """Estadísticas del sistema"""
     db = SessionLocal()
     
     try:
@@ -407,7 +363,6 @@ def obtener_estadisticas():
 
 @app.get("/api/health")
 def health_check():
-    """Health check para Render"""
     return {
         "status": "ok",
         "timestamp": datetime.now().isoformat(),
@@ -423,19 +378,6 @@ if __name__ == "__main__":
 
 ---
 
-## ✅ **LOS DEMÁS ARCHIVOS ESTÁN CORRECTOS:**
-
-- ✅ **`database.py`** - Está bien configurado
-- ✅ **`config.py`** - No necesita cambios
-- ✅ **`encomiendas_page.dart`** - Está perfecto, usa el ID correctamente
-
----
-
-## 📝 **Commit Message:**
+## 📝 **Commit:**
 ```
-fix(cron): corregir eliminación en cascada y manejo de timeouts en verificación
-
-- Eliminar historial antes de suscripciones para evitar error FK
-- Agregar reintento de 1 hora cuando hay timeout en API
-- Mejorar logs con contadores separados de errores
-- Sistema robusto ante fallos de red
+fix(cron): corregir eliminación en cascada y manejo de timeouts
