@@ -49,6 +49,57 @@ class EstadisticasResponse(BaseModel):
     completadas: int
     verificaciones_pendientes: int
 
+# ✅ FUNCIÓN NUEVA: Verificar si la guía llegó a destino
+def guia_llego_a_destino(estado: str) -> bool:
+    """
+    Detecta si una guía llegó a su destino final.
+    Solo devuelve True para los estados que indican llegada a oficina/bodega.
+    """
+    if not estado:
+        return False
+    
+    estado_normalizado = estado.upper().strip()
+    
+    # Estados que indican llegada a destino
+    estados_llegada = [
+        "RECIBIDA EN BODEGA",
+        "RECLAME EN OFICINA",
+        "REALME EN OFICINA",
+        "EN OFICINA",
+    ]
+    
+    return any(estado_destino in estado_normalizado for estado_destino in estados_llegada)
+
+# ✅ FUNCIÓN NUEVA: Verificar si debe continuar verificando
+def debe_continuar_verificando(estado: str) -> bool:
+    """
+    Determina si se debe seguir verificando esta guía.
+    False si ya fue entregada, facturada, incautada, etc.
+    """
+    if not estado:
+        return True
+    
+    estado_normalizado = estado.upper().strip()
+    
+    # Estados finales donde NO se debe seguir verificando
+    estados_finales = [
+        "ENTREGADA",
+        "ENTREGADO",
+        "FACTURADA",
+        "FACTURADO",
+        "LISTA PARA FACTURAR",
+        "ENCAUTADA",
+        "ENCAUTADO",
+        "INCAUTADA",
+        "INCAUTADO",
+        "DEVUELTA",
+        "DEVUELTO",
+        "CANCELADA",
+        "CANCELADO"
+    ]
+    
+    return not any(estado_final in estado_normalizado for estado_final in estados_finales)
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("Iniciando API de Notificaciones...")
@@ -80,11 +131,13 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
     db = SessionLocal()
     try:
         logger.info(f"Nueva suscripcion: {data.numero_guia}")
+        
         suscripcion_existente = db.query(Suscripcion).filter(
             Suscripcion.numero_guia == data.numero_guia,
             Suscripcion.onesignal_user_id == data.onesignal_user_id,
             Suscripcion.activo == True
         ).first()
+        
         if suscripcion_existente:
             logger.info(f"Suscripcion ya existe para {data.numero_guia}")
             return SuscripcionResponse(
@@ -97,10 +150,29 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
                 activo=suscripcion_existente.activo,
                 proxima_verificacion=suscripcion_existente.proxima_verificacion
             )
+        
         logger.info(f"Consultando informacion inicial de {data.numero_guia}")
         info_guia = consultar_guia_rastreo(data.numero_guia)
+        
         if not info_guia:
             raise HTTPException(status_code=404, detail=f"No se encontro la guia {data.numero_guia}")
+        
+        estado_actual = info_guia.get('estado_actual', '')
+        
+        # ✅ VALIDACIÓN: No permitir suscripción a guías que ya llegaron
+        if guia_llego_a_destino(estado_actual):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Guia ya esta en {estado_actual}, no se puede suscribir a notificaciones"
+            )
+        
+        # ✅ VALIDACIÓN: No permitir suscripción a guías en estado final
+        if not debe_continuar_verificando(estado_actual):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Guia en estado final ({estado_actual}), no se puede suscribir"
+            )
+        
         nueva_suscripcion = Suscripcion(
             numero_guia=data.numero_guia,
             onesignal_user_id=data.onesignal_user_id,
@@ -108,11 +180,12 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
             telefono=data.telefono,
             origen=info_guia.get('origen'),
             destino=info_guia.get('destino'),
-            estado_actual=info_guia.get('estado_actual'),
+            estado_actual=estado_actual,
             fecha_admision=info_guia.get('fecha_admision'),
             remitente=info_guia.get('remitente_nombre'),
             destinatario=info_guia.get('destinatario_nombre')
         )
+        
         proxima = calcular_proxima_verificacion(
             estado_actual=nueva_suscripcion.estado_actual,
             origen=nueva_suscripcion.origen,
@@ -120,11 +193,14 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
             fecha_admision=nueva_suscripcion.fecha_admision
         )
         nueva_suscripcion.proxima_verificacion = proxima
+        
         db.add(nueva_suscripcion)
         db.commit()
         db.refresh(nueva_suscripcion)
-        logger.info(f"Suscripcion creada: ID {nueva_suscripcion.id}")
-        logger.info(f"Proxima verificacion: {proxima}")
+        
+        logger.info(f"✅ Suscripcion creada: ID {nueva_suscripcion.id}")
+        logger.info(f"📅 Primera verificacion en: {proxima}")
+        
         return SuscripcionResponse(
             id=nueva_suscripcion.id,
             numero_guia=nueva_suscripcion.numero_guia,
@@ -138,7 +214,7 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creando suscripcion: {e}")
+        logger.error(f"❌ Error creando suscripcion: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -152,8 +228,10 @@ def obtener_estado_suscripcion(numero_guia: str):
             Suscripcion.numero_guia == numero_guia,
             Suscripcion.activo == True
         ).first()
+        
         if not suscripcion:
             raise HTTPException(status_code=404, detail="No se encontro suscripcion activa para esta guia")
+        
         return SuscripcionResponse(
             id=suscripcion.id,
             numero_guia=suscripcion.numero_guia,
@@ -175,10 +253,13 @@ def cancelar_suscripcion(numero_guia: str):
             Suscripcion.numero_guia == numero_guia,
             Suscripcion.activo == True
         ).first()
+        
         if not suscripcion:
             raise HTTPException(status_code=404, detail="No se encontro suscripcion activa")
+        
         suscripcion.activo = False
         db.commit()
+        
         logger.info(f"Suscripcion cancelada: {numero_guia}")
         return {"mensaje": "Suscripcion cancelada exitosamente"}
     finally:
@@ -189,48 +270,78 @@ async def verificar_guias(background_tasks: BackgroundTasks):
     db = SessionLocal()
     try:
         ahora = datetime.now()
-        logger.info(f"Iniciando verificacion de guias: {ahora}")
+        logger.info(f"🔍 Iniciando verificacion de guias: {ahora}")
+        
         suscripciones = db.query(Suscripcion).filter(
             Suscripcion.activo == True,
             Suscripcion.proxima_verificacion <= ahora
         ).all()
-        logger.info(f"Guias a verificar: {len(suscripciones)}")
+        
+        logger.info(f"📦 Guias a verificar: {len(suscripciones)}")
+        
         verificadas = 0
         notificaciones_enviadas = 0
         errores_timeout = 0
+        desactivadas_por_estado_final = 0
+        
         for suscripcion in suscripciones:
             try:
+                logger.info(f"🔍 Consultando guia {suscripcion.numero_guia} en API de rastreo...")
                 info_guia = consultar_guia_rastreo(suscripcion.numero_guia)
+                
                 if not info_guia:
-                    logger.warning(f"No se pudo consultar guia {suscripcion.numero_guia}")
+                    logger.warning(f"⚠️ No se pudo consultar guia {suscripcion.numero_guia}")
                     suscripcion.proxima_verificacion = ahora + timedelta(hours=1)
                     errores_timeout += 1
                     continue
+                
                 estado_anterior = suscripcion.estado_actual
-                estado_nuevo = info_guia.get('estado_actual')
+                estado_nuevo = info_guia.get('estado_actual', '')
+                
+                # ✅ Registrar en historial
                 historial = HistorialVerificacion(
                     suscripcion_id=suscripcion.id,
                     estado_encontrado=estado_nuevo
                 )
                 db.add(historial)
+                
                 suscripcion.estado_actual = estado_nuevo
                 suscripcion.ultima_verificacion = ahora
-                if "RECLAME EN OFICINA" in estado_nuevo.upper():
-                    logger.info(f"Guia {suscripcion.numero_guia} llego a destino!")
+                
+                logger.info(f"📊 Datos extra incluidos: {info_guia.get('datos_extra', {})}")
+                
+                # ✅ VERIFICACIÓN: Si la guía llegó a destino (BODEGA u OFICINA)
+                if guia_llego_a_destino(estado_nuevo):
+                    logger.info(f"🎉 Guia {suscripcion.numero_guia} llego a destino! Estado: {estado_nuevo}")
+                    
+                    # Enviar notificación
                     background_tasks.add_task(
                         enviar_push_notification,
                         suscripcion.onesignal_user_id,
-                        "Tu encomienda llego!",
-                        f"La guia {suscripcion.numero_guia} esta disponible para recoger en oficina",
+                        "¡Tu encomienda llegó! 🎉",
+                        f"La guía {suscripcion.numero_guia} ya está disponible para recoger en oficina",
                         {
                             "numero_guia": suscripcion.numero_guia,
                             "tipo": "llegada",
-                            "estado": "RECLAME EN OFICINA"
+                            "estado": estado_nuevo
                         }
                     )
+                    
                     suscripcion.fecha_entrega = ahora
                     suscripcion.proxima_verificacion = None
+                    suscripcion.activo = False  # ✅ Desactivar después de notificar
                     notificaciones_enviadas += 1
+                    
+                    logger.info(f"✅ Notificación enviada para {suscripcion.numero_guia}")
+                
+                # ✅ VERIFICACIÓN: Si está en estado final sin llegar a destino
+                elif not debe_continuar_verificando(estado_nuevo):
+                    logger.info(f"⚠️ Guia {suscripcion.numero_guia} en estado final: {estado_nuevo}")
+                    suscripcion.activo = False
+                    suscripcion.proxima_verificacion = None
+                    desactivadas_por_estado_final += 1
+                
+                # ✅ Continuar verificando
                 else:
                     proxima = calcular_proxima_verificacion(
                         estado_actual=estado_nuevo,
@@ -240,45 +351,59 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                         verificaciones_realizadas=suscripcion.verificaciones_realizadas + 1
                     )
                     suscripcion.proxima_verificacion = proxima
+                    logger.info(f"📅 Proxima verificacion en: {proxima}")
+                
                 suscripcion.verificaciones_realizadas += 1
                 verificadas += 1
+                
             except Exception as e:
-                logger.error(f"Error verificando {suscripcion.numero_guia}: {e}")
+                logger.error(f"❌ Error verificando {suscripcion.numero_guia}: {e}")
                 suscripcion.proxima_verificacion = ahora + timedelta(hours=1)
                 continue
+        
         db.commit()
+        
+        # Limpieza de suscripciones antiguas (48h después de entrega)
         limite_limpieza = ahora - timedelta(hours=48)
         suscripciones_a_eliminar = db.query(Suscripcion.id).filter(
             Suscripcion.fecha_entrega != None,
             Suscripcion.fecha_entrega < limite_limpieza
         ).all()
+        
         ids_a_eliminar = [s.id for s in suscripciones_a_eliminar]
         historial_eliminado = 0
         suscripciones_eliminadas = 0
+        
         if ids_a_eliminar:
             historial_eliminado = db.query(HistorialVerificacion).filter(
                 HistorialVerificacion.suscripcion_id.in_(ids_a_eliminar)
             ).delete(synchronize_session=False)
+            
             suscripciones_eliminadas = db.query(Suscripcion).filter(
                 Suscripcion.id.in_(ids_a_eliminar)
             ).delete(synchronize_session=False)
+        
         db.commit()
-        logger.info(f"Verificacion completada:")
+        
+        logger.info(f"✅ Verificacion completada:")
         logger.info(f"   - Verificadas: {verificadas}")
         logger.info(f"   - Notificaciones enviadas: {notificaciones_enviadas}")
+        logger.info(f"   - Desactivadas (estado final): {desactivadas_por_estado_final}")
         logger.info(f"   - Errores/Timeouts: {errores_timeout}")
         logger.info(f"   - Historial eliminado: {historial_eliminado}")
         logger.info(f"   - Suscripciones eliminadas: {suscripciones_eliminadas}")
+        
         return {
             "timestamp": ahora.isoformat(),
             "guias_verificadas": verificadas,
             "notificaciones_enviadas": notificaciones_enviadas,
+            "desactivadas_estado_final": desactivadas_por_estado_final,
             "errores_timeout": errores_timeout,
             "historial_eliminado": historial_eliminado,
             "suscripciones_eliminadas": suscripciones_eliminadas
         }
     except Exception as e:
-        logger.error(f"Error en verificacion: {e}")
+        logger.error(f"❌ Error en verificacion: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -291,11 +416,13 @@ def obtener_estadisticas():
         total = db.query(Suscripcion).count()
         activas = db.query(Suscripcion).filter(Suscripcion.activo == True).count()
         completadas = db.query(Suscripcion).filter(Suscripcion.fecha_entrega != None).count()
+        
         ahora = datetime.now()
         pendientes = db.query(Suscripcion).filter(
             Suscripcion.activo == True,
             Suscripcion.proxima_verificacion <= ahora
         ).count()
+        
         return EstadisticasResponse(
             total_suscripciones=total,
             activas=activas,
