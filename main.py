@@ -441,6 +441,101 @@ def health_check():
         "database": "postgresql"
     }
 
+# ============ 🆕 ENDPOINTS DE ADMINISTRACIÓN ============
+
+@app.get("/api/admin/ver-suscripciones")
+def ver_todas_suscripciones():
+    """
+    Ver todas las suscripciones activas (para debug)
+    
+    Uso: GET https://tu-api.onrender.com/api/admin/ver-suscripciones
+    """
+    db = SessionLocal()
+    try:
+        suscripciones = db.query(Suscripcion).filter(
+            Suscripcion.activo == True
+        ).all()
+        
+        resultado = []
+        for s in suscripciones:
+            resultado.append({
+                "id": s.id,
+                "numero_guia": s.numero_guia,
+                "onesignal_user_id": s.onesignal_user_id,
+                "estado_actual": s.estado_actual,
+                "fecha_creacion": s.fecha_creacion.isoformat() if s.fecha_creacion else None,
+                "proxima_verificacion": s.proxima_verificacion.isoformat() if s.proxima_verificacion else None,
+            })
+        
+        logger.info(f"📊 Consultando suscripciones activas: {len(resultado)}")
+        
+        return {
+            "total_activas": len(resultado),
+            "suscripciones": resultado
+        }
+    finally:
+        db.close()
+
+
+@app.post("/api/admin/limpiar-suscripciones")
+def limpiar_suscripciones_antiguas(user_id_actual: str):
+    """
+    Desactiva todas las suscripciones EXCEPTO las del User ID especificado
+    
+    Uso: POST https://tu-api.onrender.com/api/admin/limpiar-suscripciones?user_id_actual=c97e8f08-c30e-4c04-81a1-611cfce94d75
+    
+    Args:
+        user_id_actual: El User ID de OneSignal que quieres MANTENER activo
+    """
+    db = SessionLocal()
+    try:
+        logger.info(f"🧹 Limpiando suscripciones antiguas...")
+        logger.info(f"✅ Mantener activas: User ID = {user_id_actual}")
+        
+        # Contar suscripciones antes
+        total_antes = db.query(Suscripcion).filter(Suscripcion.activo == True).count()
+        
+        # Desactivar todas las que NO sean del user_id_actual
+        suscripciones_antiguas = db.query(Suscripcion).filter(
+            Suscripcion.activo == True,
+            Suscripcion.onesignal_user_id != user_id_actual
+        ).all()
+        
+        desactivadas = []
+        for suscripcion in suscripciones_antiguas:
+            desactivadas.append({
+                "guia": suscripcion.numero_guia,
+                "user_id": suscripcion.onesignal_user_id,
+                "estado": suscripcion.estado_actual
+            })
+            suscripcion.activo = False
+        
+        db.commit()
+        
+        # Contar suscripciones después
+        total_despues = db.query(Suscripcion).filter(Suscripcion.activo == True).count()
+        
+        logger.info(f"✅ Limpieza completada:")
+        logger.info(f"   - Antes: {total_antes} activas")
+        logger.info(f"   - Desactivadas: {len(desactivadas)}")
+        logger.info(f"   - Después: {total_despues} activas")
+        
+        return {
+            "mensaje": "Limpieza exitosa",
+            "antes": total_antes,
+            "desactivadas": len(desactivadas),
+            "despues": total_despues,
+            "detalle_desactivadas": desactivadas
+        }
+    except Exception as e:
+        logger.error(f"❌ Error en limpieza: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+# ============ FIN ENDPOINTS DE ADMINISTRACIÓN ============
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
