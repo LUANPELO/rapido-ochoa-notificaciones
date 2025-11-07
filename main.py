@@ -477,7 +477,7 @@ def ver_todas_suscripciones():
         db.close()
 
 
-@app.post("/api/admin/limpiar-suscripciones")
+@app.get("/api/admin/limpiar-suscripciones")
 def limpiar_suscripciones_antiguas(user_id_actual: str):
     """
     Desactiva todas las suscripciones EXCEPTO las del User ID especificado
