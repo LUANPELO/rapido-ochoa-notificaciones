@@ -49,7 +49,7 @@ class EstadisticasResponse(BaseModel):
     completadas: int
     verificaciones_pendientes: int
 
-# ✅ FUNCIÓN NUEVA: Verificar si la guía llegó a destino
+# ✅ FUNCIÓN: Verificar si la guía llegó a destino
 def guia_llego_a_destino(estado: str) -> bool:
     """
     Detecta si una guía llegó a su destino final.
@@ -70,7 +70,7 @@ def guia_llego_a_destino(estado: str) -> bool:
     
     return any(estado_destino in estado_normalizado for estado_destino in estados_llegada)
 
-# ✅ FUNCIÓN NUEVA: Verificar si debe continuar verificando
+# ✅ FUNCIÓN: Verificar si debe continuar verificando
 def debe_continuar_verificando(estado: str) -> bool:
     """
     Determina si se debe seguir verificando esta guía.
@@ -329,7 +329,7 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                     
                     suscripcion.fecha_entrega = ahora
                     suscripcion.proxima_verificacion = None
-                    suscripcion.activo = False  # ✅ Desactivar después de notificar
+                    suscripcion.activo = False
                     notificaciones_enviadas += 1
                     
                     logger.info(f"✅ Notificación enviada para {suscripcion.numero_guia}")
@@ -441,7 +441,55 @@ def health_check():
         "database": "postgresql"
     }
 
-# ============ 🆕 ENDPOINTS DE ADMINISTRACIÓN ============
+# ============ ENDPOINTS DE ADMINISTRACIÓN ============
+
+@app.get("/api/suscripciones/user/{onesignal_user_id}")
+def obtener_suscripciones_por_usuario(onesignal_user_id: str):
+    """
+    ✅ ENDPOINT NUEVO - Obtiene todas las suscripciones activas de un usuario
+    
+    Esto permite que la app Flutter muestre correctamente el estado de suscripción
+    
+    Uso: GET /api/suscripciones/user/8e973dff-4166-407a-9db4-f9b9fce21d68
+    
+    Returns:
+        Lista de suscripciones activas del usuario
+    """
+    db = SessionLocal()
+    try:
+        suscripciones = db.query(Suscripcion).filter(
+            Suscripcion.onesignal_user_id == onesignal_user_id,
+            Suscripcion.activo == True
+        ).all()
+        
+        if not suscripciones:
+            raise HTTPException(
+                status_code=404, 
+                detail="No se encontraron suscripciones activas para este usuario"
+            )
+        
+        resultado = []
+        for s in suscripciones:
+            resultado.append({
+                "numero_guia": s.numero_guia,
+                "estado_actual": s.estado_actual,
+                "origen": s.origen,
+                "destino": s.destino,
+                "fecha_creacion": s.fecha_creacion.isoformat() if s.fecha_creacion else None,
+                "proxima_verificacion": s.proxima_verificacion.isoformat() if s.proxima_verificacion else None,
+            })
+        
+        logger.info(f"📋 Usuario {onesignal_user_id}: {len(resultado)} suscripciones activas")
+        return resultado
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error consultando suscripciones de usuario: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
 
 @app.get("/api/admin/ver-suscripciones")
 def ver_todas_suscripciones():
@@ -482,7 +530,7 @@ def limpiar_suscripciones_antiguas(user_id_actual: str):
     """
     Desactiva todas las suscripciones EXCEPTO las del User ID especificado
     
-    Uso: POST https://tu-api.onrender.com/api/admin/limpiar-suscripciones?user_id_actual=c97e8f08-c30e-4c04-81a1-611cfce94d75
+    Uso: GET https://tu-api.onrender.com/api/admin/limpiar-suscripciones?user_id_actual=8e973dff-4166-407a-9db4-f9b9fce21d68
     
     Args:
         user_id_actual: El User ID de OneSignal que quieres MANTENER activo
