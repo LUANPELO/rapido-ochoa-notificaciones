@@ -49,18 +49,15 @@ class EstadisticasResponse(BaseModel):
     completadas: int
     verificaciones_pendientes: int
 
-# ✅ FUNCIÓN: Verificar si la guía llegó a destino
 def guia_llego_a_destino(estado: str) -> bool:
     """
     Detecta si una guía llegó a su destino final.
-    Solo devuelve True para los estados que indican llegada a oficina/bodega.
     """
     if not estado:
         return False
     
     estado_normalizado = estado.upper().strip()
     
-    # Estados que indican llegada a destino
     estados_llegada = [
         "RECIBIDA EN BODEGA",
         "RECLAME EN OFICINA",
@@ -70,18 +67,15 @@ def guia_llego_a_destino(estado: str) -> bool:
     
     return any(estado_destino in estado_normalizado for estado_destino in estados_llegada)
 
-# ✅ FUNCIÓN: Verificar si debe continuar verificando
 def debe_continuar_verificando(estado: str) -> bool:
     """
     Determina si se debe seguir verificando esta guía.
-    False si ya fue entregada, facturada, incautada, etc.
     """
     if not estado:
         return True
     
     estado_normalizado = estado.upper().strip()
     
-    # Estados finales donde NO se debe seguir verificando
     estados_finales = [
         "ENTREGADA",
         "ENTREGADO",
@@ -159,14 +153,12 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
         
         estado_actual = info_guia.get('estado_actual', '')
         
-        # ✅ VALIDACIÓN: No permitir suscripción a guías que ya llegaron
         if guia_llego_a_destino(estado_actual):
             raise HTTPException(
                 status_code=400, 
                 detail=f"Guia ya esta en {estado_actual}, no se puede suscribir a notificaciones"
             )
         
-        # ✅ VALIDACIÓN: No permitir suscripción a guías en estado final
         if not debe_continuar_verificando(estado_actual):
             raise HTTPException(
                 status_code=400,
@@ -298,7 +290,6 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                 estado_anterior = suscripcion.estado_actual
                 estado_nuevo = info_guia.get('estado_actual', '')
                 
-                # ✅ Registrar en historial
                 historial = HistorialVerificacion(
                     suscripcion_id=suscripcion.id,
                     estado_encontrado=estado_nuevo
@@ -310,11 +301,9 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                 
                 logger.info(f"📊 Datos extra incluidos: {info_guia.get('datos_extra', {})}")
                 
-                # ✅ VERIFICACIÓN: Si la guía llegó a destino (BODEGA u OFICINA)
                 if guia_llego_a_destino(estado_nuevo):
                     logger.info(f"🎉 Guia {suscripcion.numero_guia} llego a destino! Estado: {estado_nuevo}")
                     
-                    # Enviar notificación
                     background_tasks.add_task(
                         enviar_push_notification,
                         suscripcion.onesignal_user_id,
@@ -334,14 +323,12 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                     
                     logger.info(f"✅ Notificación enviada para {suscripcion.numero_guia}")
                 
-                # ✅ VERIFICACIÓN: Si está en estado final sin llegar a destino
                 elif not debe_continuar_verificando(estado_nuevo):
                     logger.info(f"⚠️ Guia {suscripcion.numero_guia} en estado final: {estado_nuevo}")
                     suscripcion.activo = False
                     suscripcion.proxima_verificacion = None
                     desactivadas_por_estado_final += 1
                 
-                # ✅ Continuar verificando
                 else:
                     proxima = calcular_proxima_verificacion(
                         estado_actual=estado_nuevo,
@@ -363,7 +350,6 @@ async def verificar_guias(background_tasks: BackgroundTasks):
         
         db.commit()
         
-        # Limpieza de suscripciones antiguas (48h después de entrega)
         limite_limpieza = ahora - timedelta(hours=48)
         suscripciones_a_eliminar = db.query(Suscripcion.id).filter(
             Suscripcion.fecha_entrega != None,
@@ -441,19 +427,10 @@ def health_check():
         "database": "postgresql"
     }
 
-# ============ ENDPOINTS DE ADMINISTRACIÓN ============
-
 @app.get("/api/suscripciones/user/{onesignal_user_id}")
 def obtener_suscripciones_por_usuario(onesignal_user_id: str):
     """
-    ✅ ENDPOINT NUEVO - Obtiene todas las suscripciones activas de un usuario
-    
-    Esto permite que la app Flutter muestre correctamente el estado de suscripción
-    
-    Uso: GET /api/suscripciones/user/8e973dff-4166-407a-9db4-f9b9fce21d68
-    
-    Returns:
-        Lista de suscripciones activas del usuario
+    ✅ CORREGIDO - Devuelve lista vacía si no hay suscripciones
     """
     db = SessionLocal()
     try:
@@ -461,12 +438,6 @@ def obtener_suscripciones_por_usuario(onesignal_user_id: str):
             Suscripcion.onesignal_user_id == onesignal_user_id,
             Suscripcion.activo == True
         ).all()
-        
-        if not suscripciones:
-            raise HTTPException(
-                status_code=404, 
-                detail="No se encontraron suscripciones activas para este usuario"
-            )
         
         resultado = []
         for s in suscripciones:
@@ -482,22 +453,15 @@ def obtener_suscripciones_por_usuario(onesignal_user_id: str):
         logger.info(f"📋 Usuario {onesignal_user_id}: {len(resultado)} suscripciones activas")
         return resultado
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"❌ Error consultando suscripciones de usuario: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
 
-
 @app.get("/api/admin/ver-suscripciones")
 def ver_todas_suscripciones():
-    """
-    Ver todas las suscripciones activas (para debug)
-    
-    Uso: GET https://tu-api.onrender.com/api/admin/ver-suscripciones
-    """
+    """Ver todas las suscripciones activas"""
     db = SessionLocal()
     try:
         suscripciones = db.query(Suscripcion).filter(
@@ -524,26 +488,16 @@ def ver_todas_suscripciones():
     finally:
         db.close()
 
-
 @app.get("/api/admin/limpiar-suscripciones")
 def limpiar_suscripciones_antiguas(user_id_actual: str):
-    """
-    Desactiva todas las suscripciones EXCEPTO las del User ID especificado
-    
-    Uso: GET https://tu-api.onrender.com/api/admin/limpiar-suscripciones?user_id_actual=8e973dff-4166-407a-9db4-f9b9fce21d68
-    
-    Args:
-        user_id_actual: El User ID de OneSignal que quieres MANTENER activo
-    """
+    """Desactiva suscripciones antiguas"""
     db = SessionLocal()
     try:
         logger.info(f"🧹 Limpiando suscripciones antiguas...")
         logger.info(f"✅ Mantener activas: User ID = {user_id_actual}")
         
-        # Contar suscripciones antes
         total_antes = db.query(Suscripcion).filter(Suscripcion.activo == True).count()
         
-        # Desactivar todas las que NO sean del user_id_actual
         suscripciones_antiguas = db.query(Suscripcion).filter(
             Suscripcion.activo == True,
             Suscripcion.onesignal_user_id != user_id_actual
@@ -560,7 +514,6 @@ def limpiar_suscripciones_antiguas(user_id_actual: str):
         
         db.commit()
         
-        # Contar suscripciones después
         total_despues = db.query(Suscripcion).filter(Suscripcion.activo == True).count()
         
         logger.info(f"✅ Limpieza completada:")
@@ -581,8 +534,6 @@ def limpiar_suscripciones_antiguas(user_id_actual: str):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
-
-# ============ FIN ENDPOINTS DE ADMINISTRACIÓN ============
 
 if __name__ == "__main__":
     import uvicorn
