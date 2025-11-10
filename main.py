@@ -5,9 +5,10 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 import logging
 import os
+import requests  # ← AGREGADO
 
 from database import SessionLocal, init_db, Suscripcion, HistorialVerificacion
-from config import TIEMPOS_VIAJE, CIUDADES_NORMALIZE
+from config import TIEMPOS_VIAJE, CIUDADES_NORMALIZE, ONESIGNAL_API_KEY, ONESIGNAL_APP_ID  # ← AGREGADO
 from utils import consultar_guia_rastreo, enviar_push_notification, calcular_proxima_verificacion
 
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +27,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ===== MODELOS DE DATOS =====
 
 class SuscripcionCreate(BaseModel):
     numero_guia: str
@@ -48,6 +51,15 @@ class EstadisticasResponse(BaseModel):
     activas: int
     completadas: int
     verificaciones_pendientes: int
+
+class RegistroDispositivoRequest(BaseModel):
+    """Request para registrar un dispositivo en OneSignal desde el backend"""
+    device_type: int  # 0 = iOS, 1 = Android, 2 = Web
+    identifier: str   # FCM Token
+    language: str = "es"
+    timezone: int = -18000  # Colombia (UTC-5)
+
+# ===== FUNCIONES AUXILIARES =====
 
 def guia_llego_a_destino(estado: str) -> bool:
     """
@@ -94,14 +106,25 @@ def debe_continuar_verificando(estado: str) -> bool:
     
     return not any(estado_final in estado_normalizado for estado_final in estados_finales)
 
+# ===== EVENTOS DE INICIO =====
+
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Iniciando API de Notificaciones...")
+    logger.info("🚀 Iniciando API de Notificaciones Rápido Ochoa...")
     init_db()
-    logger.info("Base de datos inicializada")
+    logger.info("✅ Base de datos inicializada")
+    
+    # Verificar configuración de OneSignal
+    if ONESIGNAL_API_KEY and ONESIGNAL_APP_ID:
+        logger.info("✅ OneSignal configurado correctamente")
+    else:
+        logger.warning("⚠️ OneSignal NO configurado - Variables de entorno faltantes")
+
+# ===== ENDPOINTS =====
 
 @app.get("/")
 def root():
+    """Endpoint raíz con información de la API"""
     return {
         "servicio": "API Notificaciones Rapido Ochoa",
         "version": "1.0.0",
@@ -110,15 +133,213 @@ def root():
             "Verificacion optimizada por distancia",
             "PostgreSQL persistente",
             "OneSignal Push Notifications",
-            "Limpieza automatica"
+            "Limpieza automatica",
+            "Registro seguro de dispositivos"
         ],
         "endpoints": {
+            "registrar_dispositivo": "POST /api/registrar-dispositivo",
             "suscribirse": "POST /api/suscribir",
             "estado": "GET /api/suscripcion/{guia}",
             "verificar": "POST /api/verificar",
-            "estadisticas": "GET /api/stats"
+            "estadisticas": "GET /api/stats",
+            "health": "GET /api/health"
         }
     }
+
+@app.post("/api/registrar-dispositivo")
+async def registrar_dispositivo(data: RegistroDispositivoRequest):
+    """
+    🔒 ENDPOINT SEGURO: Registra un dispositivo en OneSignal desde el backend.
+    
+    Flutter envía los datos del dispositivo (FCM token), el backend los registra
+    en OneSignal usando la API key que está en variables de entorno.
+    
+    SEGURIDAD CRÍTICA: La API key de OneSignal NUNCA sale del backend.
+    
+    Args:
+        data: Información del dispositivo
+            - device_type: 0=iOS, 1=Android, 2=Web
+            - identifier: Token FCM del dispositivo
+            - language: Idioma (default: "es")
+            - timezone: Zona horaria en segundos (default: -18000 para Colombia UTC-5)
+    
+    Returns:
+        {
+            "success": true,
+            "onesignal_user_id": "uuid-del-usuario",
+            "message": "Dispositivo registrado exitosamente"
+        }
+    
+    Raises:
+        HTTPException 400: Token FCM inválido o error de validación
+        HTTPException 500: OneSignal no configurado o error interno
+        HTTPException 504: Timeout conectando con OneSignal
+    """
+    try:
+        logger.info("=" * 60)
+        logger.info("📱 NUEVA SOLICITUD DE REGISTRO DE DISPOSITIVO")
+        logger.info("=" * 60)
+        logger.info(f"   Device Type: {data.device_type} (0=iOS, 1=Android, 2=Web)")
+        logger.info(f"   Language: {data.language}")
+        logger.info(f"   Timezone: {data.timezone}")
+        logger.info(f"   FCM Token (primeros 30 chars): {data.identifier[:30]}...")
+        
+        # ✅ VALIDACIÓN 1: Verificar que OneSignal esté configurado
+        if not ONESIGNAL_API_KEY or not ONESIGNAL_APP_ID:
+            logger.error("❌ CRÍTICO: OneSignal no configurado")
+            logger.error("   Variables de entorno faltantes:")
+            logger.error(f"   - ONESIGNAL_API_KEY: {'✅ OK' if ONESIGNAL_API_KEY else '❌ FALTA'}")
+            logger.error(f"   - ONESIGNAL_APP_ID: {'✅ OK' if ONESIGNAL_APP_ID else '❌ FALTA'}")
+            raise HTTPException(
+                status_code=500, 
+                detail="OneSignal no está configurado en el servidor. Contacte al administrador del sistema."
+            )
+        
+        # ✅ VALIDACIÓN 2: Verificar que el token no esté vacío
+        if not data.identifier or len(data.identifier.strip()) == 0:
+            logger.error("❌ Token FCM vacío o inválido")
+            raise HTTPException(
+                status_code=400,
+                detail="El token FCM es requerido y no puede estar vacío"
+            )
+        
+        # ✅ VALIDACIÓN 3: Verificar tipo de dispositivo válido
+        if data.device_type not in [0, 1, 2]:
+            logger.error(f"❌ Tipo de dispositivo inválido: {data.device_type}")
+            raise HTTPException(
+                status_code=400,
+                detail="device_type debe ser 0 (iOS), 1 (Android) o 2 (Web)"
+            )
+        
+        logger.info("✅ Todas las validaciones pasadas")
+        logger.info("🔐 Preparando credenciales de OneSignal...")
+        
+        # Preparar headers para OneSignal API
+        headers = {
+            "Authorization": f"Basic {ONESIGNAL_API_KEY}",
+            "Content-Type": "application/json; charset=utf-8"
+        }
+        
+        # Preparar payload para registrar dispositivo
+        payload = {
+            "app_id": ONESIGNAL_APP_ID,
+            "device_type": data.device_type,
+            "identifier": data.identifier.strip(),
+            "language": data.language,
+            "timezone": data.timezone,
+        }
+        
+        logger.info("📡 Enviando solicitud a OneSignal API...")
+        logger.info(f"   URL: https://onesignal.com/api/v1/players")
+        logger.info(f"   App ID: {ONESIGNAL_APP_ID[:20]}...")
+        
+        # ✅ LLAMADA SEGURA A ONESIGNAL API
+        response = requests.post(
+            "https://onesignal.com/api/v1/players",
+            json=payload,
+            headers=headers,
+            timeout=15  # Timeout de 15 segundos
+        )
+        
+        logger.info(f"📥 Respuesta recibida de OneSignal")
+        logger.info(f"   Status Code: {response.status_code}")
+        
+        # ✅ PROCESAR RESPUESTA EXITOSA
+        if response.status_code in [200, 201]:
+            result = response.json()
+            onesignal_user_id = result.get("id")
+            
+            # Validar que se recibió un User ID válido
+            if not onesignal_user_id:
+                logger.error("⚠️ OneSignal no devolvió un User ID")
+                logger.error(f"   Response completo: {result}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="OneSignal no devolvió un User ID válido. Intente nuevamente."
+                )
+            
+            # Validar formato UUID del User ID
+            if len(onesignal_user_id) < 30:
+                logger.warning(f"⚠️ User ID con formato sospechoso: {onesignal_user_id}")
+            
+            logger.info("=" * 60)
+            logger.info("✅ REGISTRO EXITOSO")
+            logger.info("=" * 60)
+            logger.info(f"   OneSignal User ID: {onesignal_user_id}")
+            logger.info(f"   Success: {result.get('success', True)}")
+            logger.info("=" * 60)
+            
+            return {
+                "success": True,
+                "onesignal_user_id": onesignal_user_id,
+                "message": "Dispositivo registrado exitosamente en OneSignal"
+            }
+        
+        # ✅ MANEJO DE ERRORES 400 (Validación)
+        elif response.status_code == 400:
+            error_data = response.json()
+            logger.error("❌ Error de validación en OneSignal")
+            logger.error(f"   Status: 400")
+            logger.error(f"   Errores: {error_data.get('errors', {})}")
+            
+            error_msg = "Token FCM inválido o parámetros incorrectos"
+            if 'errors' in error_data:
+                errors_list = error_data['errors']
+                if isinstance(errors_list, list) and len(errors_list) > 0:
+                    error_msg = str(errors_list[0])
+                elif isinstance(errors_list, dict):
+                    error_msg = str(list(errors_list.values())[0])
+            
+            raise HTTPException(
+                status_code=400,
+                detail=f"Error de validación de OneSignal: {error_msg}"
+            )
+        
+        # ✅ MANEJO DE OTROS ERRORES DE ONESIGNAL
+        else:
+            logger.error(f"❌ Error inesperado de OneSignal")
+            logger.error(f"   Status Code: {response.status_code}")
+            logger.error(f"   Response: {response.text[:500]}")
+            
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Error de OneSignal (código {response.status_code}). Intente nuevamente."
+            )
+    
+    # ✅ MANEJO DE TIMEOUT
+    except requests.exceptions.Timeout:
+        logger.error("⏰ TIMEOUT conectando con OneSignal")
+        logger.error("   La solicitud tardó más de 15 segundos")
+        raise HTTPException(
+            status_code=504,
+            detail="Timeout al conectar con OneSignal. Verifique su conexión e intente nuevamente."
+        )
+    
+    # ✅ MANEJO DE ERRORES DE CONEXIÓN
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"🌐 Error de conexión con OneSignal: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo conectar con OneSignal. Verifique su conexión a internet."
+        )
+    
+    # Re-lanzar HTTPException para que FastAPI las maneje correctamente
+    except HTTPException:
+        raise
+    
+    # ✅ MANEJO DE ERRORES INESPERADOS
+    except Exception as e:
+        logger.error("=" * 60)
+        logger.error("❌ ERROR INESPERADO EN REGISTRO DE DISPOSITIVO")
+        logger.error("=" * 60)
+        logger.error(f"   Tipo: {type(e).__name__}")
+        logger.error(f"   Mensaje: {str(e)}")
+        logger.error("=" * 60)
+        
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error interno del servidor: {str(e)}"
+        )
 
 @app.post("/api/suscribir", response_model=SuscripcionResponse)
 async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTasks):
@@ -420,17 +641,21 @@ def obtener_estadisticas():
 
 @app.get("/api/health")
 def health_check():
+    """Endpoint de salud para monitoreo"""
+    onesignal_status = "configured" if (ONESIGNAL_API_KEY and ONESIGNAL_APP_ID) else "not_configured"
+    
     return {
         "status": "ok",
         "timestamp": datetime.now().isoformat(),
         "version": "1.0.0",
-        "database": "postgresql"
+        "database": "postgresql",
+        "onesignal": onesignal_status
     }
 
 @app.get("/api/suscripciones/user/{onesignal_user_id}")
 def obtener_suscripciones_por_usuario(onesignal_user_id: str):
     """
-    ✅ CORREGIDO - Devuelve lista vacía si no hay suscripciones
+    Obtiene todas las suscripciones activas de un usuario
     """
     db = SessionLocal()
     try:
@@ -461,7 +686,7 @@ def obtener_suscripciones_por_usuario(onesignal_user_id: str):
 
 @app.get("/api/admin/ver-suscripciones")
 def ver_todas_suscripciones():
-    """Ver todas las suscripciones activas"""
+    """Ver todas las suscripciones activas (endpoint administrativo)"""
     db = SessionLocal()
     try:
         suscripciones = db.query(Suscripcion).filter(
@@ -490,7 +715,7 @@ def ver_todas_suscripciones():
 
 @app.get("/api/admin/limpiar-suscripciones")
 def limpiar_suscripciones_antiguas(user_id_actual: str):
-    """Desactiva suscripciones antiguas"""
+    """Desactiva suscripciones antiguas (endpoint administrativo)"""
     db = SessionLocal()
     try:
         logger.info(f"🧹 Limpiando suscripciones antiguas...")
