@@ -29,7 +29,7 @@ HORAS_ENTRE_VERIFICACIONES = 2
 # Diccionario con tiempos estimados en horas
 # Formato: (CIUDAD_ORIGEN, CIUDAD_DESTINO): horas
 TIEMPOS_VIAJE = {
-    # Rutas principales - Bogotá
+    # ========== RUTAS PRINCIPALES - BOGOTÁ ==========
     ("BOGOTA", "MEDELLIN"): 10,
     ("MEDELLIN", "BOGOTA"): 10,
     ("BOGOTA", "CALI"): 10,
@@ -38,8 +38,10 @@ TIEMPOS_VIAJE = {
     ("BARRANQUILLA", "BOGOTA"): 18,
     ("BOGOTA", "BUCARAMANGA"): 8,
     ("BUCARAMANGA", "BOGOTA"): 8,
+    ("BOGOTA", "TOLU"): 16,
+    ("TOLU", "BOGOTA"): 16,
     
-    # Rutas principales - Medellín
+    # ========== RUTAS PRINCIPALES - MEDELLÍN ==========
     ("MEDELLIN", "BARRANQUILLA"): 16,
     ("BARRANQUILLA", "MEDELLIN"): 16,
     ("MEDELLIN", "CALI"): 8,
@@ -64,8 +66,10 @@ TIEMPOS_VIAJE = {
     ("QUIBDO", "MEDELLIN"): 11,
     ("MEDELLIN", "RIOHACHA"): 16,
     ("RIOHACHA", "MEDELLIN"): 16,
+    ("MEDELLIN", "SOLEDAD"): 16,
+    ("SOLEDAD", "MEDELLIN"): 16,
     
-    # Rutas principales - Barranquilla
+    # ========== RUTAS PRINCIPALES - BARRANQUILLA ==========
     ("BARRANQUILLA", "SINCELEJO"): 4,
     ("SINCELEJO", "BARRANQUILLA"): 4,
     ("BARRANQUILLA", "CALI"): 20,
@@ -86,8 +90,35 @@ TIEMPOS_VIAJE = {
     ("YARUMAL", "BARRANQUILLA"): 13,
     ("BARRANQUILLA", "SAHAGUN"): 7,
     ("SAHAGUN", "BARRANQUILLA"): 7,
+    ("BARRANQUILLA", "SOLEDAD"): 1,
+    ("SOLEDAD", "BARRANQUILLA"): 1,
     
-    # Rutas Costa - Caucasia
+    # ========== RUTAS PRINCIPALES - SOLEDAD ==========
+    # (Soledad tiene las mismas rutas que Barranquilla ya que está al lado)
+    ("SOLEDAD", "SINCELEJO"): 4,
+    ("SINCELEJO", "SOLEDAD"): 4,
+    ("SOLEDAD", "CALI"): 20,
+    ("CALI", "SOLEDAD"): 20,
+    ("SOLEDAD", "CAUCASIA"): 8,
+    ("CAUCASIA", "SOLEDAD"): 8,
+    ("SOLEDAD", "PLANETA RICA"): 6,
+    ("PLANETA RICA", "SOLEDAD"): 6,
+    ("SOLEDAD", "MAICAO"): 7,
+    ("MAICAO", "SOLEDAD"): 7,
+    ("SOLEDAD", "LA APARTADA"): 7,
+    ("LA APARTADA", "SOLEDAD"): 7,
+    ("SOLEDAD", "SANTA MARTA"): 3,
+    ("SANTA MARTA", "SOLEDAD"): 3,
+    ("SOLEDAD", "RIOHACHA"): 5,
+    ("RIOHACHA", "SOLEDAD"): 5,
+    ("SOLEDAD", "YARUMAL"): 13,
+    ("YARUMAL", "SOLEDAD"): 13,
+    ("SOLEDAD", "SAHAGUN"): 7,
+    ("SAHAGUN", "SOLEDAD"): 7,
+    ("SOLEDAD", "BOGOTA"): 18,
+    ("BOGOTA", "SOLEDAD"): 18,
+    
+    # ========== RUTAS COSTA - CAUCASIA ==========
     ("CAUCASIA", "SINCELEJO"): 4,
     ("SINCELEJO", "CAUCASIA"): 4,
     ("CAUCASIA", "SANTA MARTA"): 11,
@@ -96,14 +127,46 @@ TIEMPOS_VIAJE = {
     ("MAICAO", "CAUCASIA"): 15,
     ("CAUCASIA", "PLANETA RICA"): 2,
     ("PLANETA RICA", "CAUCASIA"): 2,
+    ("CAUCASIA", "TOLU"): 5,
+    ("TOLU", "CAUCASIA"): 5,
     
-    # Rutas Costa - Santa Marta
+    # ========== RUTAS COSTA - SANTA MARTA ==========
     ("SANTA MARTA", "SINCELEJO"): 7,
     ("SINCELEJO", "SANTA MARTA"): 7,
-    ("SANTA MARTA", "PLANETA RICA"): 7,
-    ("PLANETA RICA", "SANTA MARTA"): 7,
+    ("SANTA MARTA", "PLANETA RICA"): 9,
+    ("PLANETA RICA", "SANTA MARTA"): 9,
     ("SANTA MARTA", "MAICAO"): 4,
     ("MAICAO", "SANTA MARTA"): 4,
+    ("SANTA MARTA", "LA APARTADA"): 9,
+    ("LA APARTADA", "SANTA MARTA"): 9,
+    
+    # ========== RUTAS COSTA - PLANETA RICA ==========
+    ("PLANETA RICA", "RIOHACHA"): 12,
+    ("RIOHACHA", "PLANETA RICA"): 12,
+    ("PLANETA RICA", "CARTAGENA"): 7,
+    ("CARTAGENA", "PLANETA RICA"): 7,
+    ("PLANETA RICA", "TOLU"): 3,
+    ("TOLU", "PLANETA RICA"): 3,
+    
+    # ========== RUTAS COSTA - SINCELEJO ==========
+    ("SINCELEJO", "CARTAGENA"): 5,
+    ("CARTAGENA", "SINCELEJO"): 5,
+    ("SINCELEJO", "MONTERIA"): 2,
+    ("MONTERIA", "SINCELEJO"): 2,
+    ("SINCELEJO", "YARUMAL"): 9,
+    ("YARUMAL", "SINCELEJO"): 9,
+    
+    # ========== RUTAS COSTA - LA APARTADA ==========
+    ("LA APARTADA", "RIOHACHA"): 12,
+    ("RIOHACHA", "LA APARTADA"): 12,
+    ("LA APARTADA", "MAICAO"): 13,
+    ("MAICAO", "LA APARTADA"): 13,
+    
+    # ========== RUTAS COSTA - TOLÚ ==========
+    ("TOLU", "MONTERIA"): 2,
+    ("MONTERIA", "TOLU"): 2,
+    ("TOLU", "PUERTO BERRIO"): 9,
+    ("PUERTO BERRIO", "TOLU"): 9,
 }
 
 # ===== NORMALIZACIÓN DE CIUDADES =====
@@ -120,6 +183,8 @@ CIUDADES_NORMALIZE = {
     "bucaramanga": "BUCARAMANGA",
     "pereira": "PEREIRA",
     "cartagena": "CARTAGENA",
+    "monteria": "MONTERIA",
+    "montería": "MONTERIA",
     
     # Ciudades costa y norte
     "maicao": "MAICAO",
@@ -134,6 +199,11 @@ CIUDADES_NORMALIZE = {
     "yarumal": "YARUMAL",
     "sahagun": "SAHAGUN",
     "sahagún": "SAHAGUN",
+    "soledad": "SOLEDAD",
+    "soledao": "SOLEDAD",
+    "puerto berrio": "PUERTO BERRIO",
+    "puerto berrío": "PUERTO BERRIO",
+    "puertoberrio": "PUERTO BERRIO",
     
     # Ciudades pacífico
     "tolu": "TOLU",
