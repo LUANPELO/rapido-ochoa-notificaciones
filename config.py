@@ -2,6 +2,7 @@
 Configuración centralizada del sistema de notificaciones Rápido Ochoa
 """
 import os
+import logging
 from typing import Tuple
 
 # ===== ONESIGNAL - CONFIGURACIÓN SEGURA =====
@@ -12,7 +13,6 @@ ONESIGNAL_APP_ID = os.environ.get("ONESIGNAL_APP_ID", "")
 
 # Validar que las variables estén configuradas
 if not ONESIGNAL_API_KEY or not ONESIGNAL_APP_ID:
-    import logging
     logging.warning("⚠️ OneSignal no configurado - Variables de entorno faltantes")
 
 # ===== API DE RASTREO =====
@@ -62,6 +62,8 @@ TIEMPOS_VIAJE = {
     ("TOLU", "MEDELLIN"): 11,
     ("MEDELLIN", "QUIBDO"): 11,
     ("QUIBDO", "MEDELLIN"): 11,
+    ("MEDELLIN", "RIOHACHA"): 16,
+    ("RIOHACHA", "MEDELLIN"): 16,
     
     # Rutas principales - Barranquilla
     ("BARRANQUILLA", "SINCELEJO"): 4,
@@ -167,3 +169,70 @@ def normalizar_ciudad(ciudad: str) -> str:
     
     # Buscar en el diccionario de normalización
     return CIUDADES_NORMALIZE.get(ciudad_lower, ciudad.upper())
+
+
+def limpiar_nombre_ciudad(ciudad: str) -> str:
+    """
+    Elimina el departamento entre paréntesis y normaliza el nombre
+    
+    Args:
+        ciudad: Nombre con formato "CIUDAD (DEPARTAMENTO)"
+    
+    Returns:
+        Nombre de ciudad limpio y normalizado
+        
+    Examples:
+        >>> limpiar_nombre_ciudad("MEDELLIN (ANTIOQUIA)")
+        'MEDELLIN'
+        >>> limpiar_nombre_ciudad("RIOHACHA (LA GUAJIRA)")
+        'RIOHACHA'
+        >>> limpiar_nombre_ciudad("BOGOTA")
+        'BOGOTA'
+    """
+    if not ciudad:
+        return ""
+    
+    # Eliminar texto entre paréntesis: "CIUDAD (DEPTO)" -> "CIUDAD"
+    ciudad_limpia = ciudad.split('(')[0].strip()
+    
+    # Normalizar usando la función existente
+    return normalizar_ciudad(ciudad_limpia)
+
+
+def obtener_tiempo_viaje(origen: str, destino: str) -> int:
+    """
+    Obtiene el tiempo de viaje entre dos ciudades
+    Maneja automáticamente nombres con departamentos: "CIUDAD (DEPTO)"
+    
+    Args:
+        origen: Ciudad de origen (puede incluir departamento)
+        destino: Ciudad de destino (puede incluir departamento)
+    
+    Returns:
+        Tiempo de viaje en horas, o tiempo por defecto si no se encuentra
+        
+    Examples:
+        >>> obtener_tiempo_viaje("MEDELLIN (ANTIOQUIA)", "RIOHACHA (LA GUAJIRA)")
+        16
+        >>> obtener_tiempo_viaje("MEDELLIN", "RIOHACHA")
+        16
+        >>> obtener_tiempo_viaje("BOGOTA", "CALI")
+        10
+    """
+    # Limpiar nombres de ciudades (elimina departamentos)
+    origen_limpio = limpiar_nombre_ciudad(origen)
+    destino_limpio = limpiar_nombre_ciudad(destino)
+    
+    # Buscar en el diccionario
+    ruta = (origen_limpio, destino_limpio)
+    
+    # Si existe la ruta, devolverla
+    if ruta in TIEMPOS_VIAJE:
+        return TIEMPOS_VIAJE[ruta]
+    
+    # Si no existe, usar tiempo por defecto (12 horas)
+    logging.warning(
+        f"⚠️ Ruta {origen_limpio} -> {destino_limpio} no encontrada, "
+        f"usando tiempo por defecto de 12 horas"
+    )
+    return 12
