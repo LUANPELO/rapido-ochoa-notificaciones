@@ -10,10 +10,9 @@ from config import (
     RASTREO_API_URL, 
     ONESIGNAL_API_KEY,
     ONESIGNAL_APP_ID,
-    TIEMPOS_VIAJE,
-    HORAS_ANTES_LLEGADA,
     HORAS_ENTRE_VERIFICACIONES,
-    normalizar_ciudad
+    obtener_tiempo_viaje,  # ✅ IMPORTAR de config
+    limpiar_nombre_ciudad  # ✅ IMPORTAR de config
 )
 
 logger = logging.getLogger(__name__)
@@ -56,32 +55,6 @@ def consultar_guia_rastreo(numero_guia: str) -> Optional[Dict]:
 
 # ============ CÁLCULO DE TIEMPOS ============
 
-def obtener_tiempo_viaje(origen: str, destino: str) -> int:
-    """
-    Obtiene el tiempo de viaje entre dos ciudades
-    
-    Args:
-        origen: Ciudad de origen
-        destino: Ciudad de destino
-    
-    Returns:
-        Horas de viaje aproximadas
-    """
-    # Normalizar nombres de ciudades
-    origen_norm = normalizar_ciudad(origen)
-    destino_norm = normalizar_ciudad(destino)
-    
-    # Buscar en el diccionario
-    tiempo = TIEMPOS_VIAJE.get((origen_norm, destino_norm))
-    
-    if tiempo:
-        return tiempo
-    
-    # Si no existe la ruta exacta, retornar tiempo por defecto
-    logger.warning(f"⚠️ Ruta {origen_norm} -> {destino_norm} no encontrada, usando tiempo por defecto")
-    return 12  # 12 horas por defecto
-
-
 def calcular_proxima_verificacion(
     estado_actual: str,
     origen: str,
@@ -92,15 +65,17 @@ def calcular_proxima_verificacion(
     """
     Calcula cuándo debe realizarse la próxima verificación de una guía
     
+    ⚠️ LÓGICA CRÍTICA: El timer del 80% SOLO inicia cuando el estado es "DESPACHO NACIONAL BUSES"
+    
     Estrategia inteligente:
-    - Espera hasta detectar "DESPACHO" o similar
-    - Primera verificación: 80% del tiempo estimado de viaje
-    - Siguientes: cada 2 horas hasta encontrar "RECLAME EN OFICINA"
+    1. Espera hasta detectar "DESPACHO NACIONAL BUSES" específicamente
+    2. Primera verificación DESPUÉS del despacho: 80% del tiempo estimado de viaje
+    3. Siguientes: cada 2 horas hasta encontrar "RECLAME EN OFICINA"
     
     Args:
         estado_actual: Estado actual de la guía
-        origen: Ciudad origen
-        destino: Ciudad destino
+        origen: Ciudad origen (puede incluir departamento)
+        destino: Ciudad destino (puede incluir departamento)
         fecha_admision: Fecha de admisión (formato: "2025/10/03 13:07")
         verificaciones_realizadas: Número de verificaciones ya hechas
     
@@ -110,41 +85,54 @@ def calcular_proxima_verificacion(
     try:
         estado_upper = estado_actual.upper() if estado_actual else ""
         
-        # Si ya llegó a destino, no programar más verificaciones
+        # ✅ PASO 1: Si ya llegó a destino, NO programar más verificaciones
         if "RECLAME EN OFICINA" in estado_upper or "ENTREGADA" in estado_upper:
             logger.info("📦 Guía ya está en RECLAME EN OFICINA, no programar verificaciones")
             return None
         
-        # Si aún no ha sido despachada, verificar en 2 horas
-        if "DESPACHO" not in estado_upper and "EN RUTA" not in estado_upper:
+        # ✅ PASO 2: Si aún NO está en "DESPACHO NACIONAL BUSES", verificar en 2 horas
+        if "DESPACHO NACIONAL BUSES" not in estado_upper:
             proxima = datetime.now() + timedelta(hours=2)
-            logger.info(f"📅 Guía sin despachar, verificar en 2 horas: {proxima}")
+            logger.info(f"⏳ Guía sin despachar todavía, verificar en 2 horas: {proxima}")
+            logger.info(f"📍 Estado actual: {estado_actual}")
             return proxima
         
-        # Ya fue despachada, usar estrategia inteligente
-        tiempo_viaje = obtener_tiempo_viaje(origen, destino)
+        # ✅ PASO 3: Ya está en "DESPACHO NACIONAL BUSES", usar estrategia inteligente
+        logger.info(f"🚛 Guía DESPACHADA - Iniciando cálculo de tiempo estimado")
         
-        # Primera verificación después del despacho: 80% del tiempo estimado
+        # Obtener tiempo de viaje (maneja automáticamente departamentos)
+        tiempo_viaje = obtener_tiempo_viaje(origen, destino)
+        logger.info(f"⏱️ Tiempo estimado de viaje: {tiempo_viaje} horas")
+        
+        # ✅ Primera verificación después del despacho: 80% del tiempo estimado
         if verificaciones_realizadas == 0 or verificaciones_realizadas == 1:
             # Calcular tiempo desde admisión
             try:
                 fecha_obj = datetime.strptime(fecha_admision, "%Y/%m/%d %H:%M")
+                logger.info(f"📅 Fecha de admisión: {fecha_obj}")
             except:
                 # Si no se puede parsear, usar hora actual
                 fecha_obj = datetime.now()
+                logger.warning(f"⚠️ No se pudo parsear fecha {fecha_admision}, usando hora actual")
             
-            # Calcular cuándo debería llegar (80% del tiempo)
-            horas_hasta_llegada = int(tiempo_viaje * 0.8)
-            primera_verificacion = fecha_obj + timedelta(hours=horas_hasta_llegada)
+            # Calcular cuándo debería llegar (80% del tiempo total)
+            horas_hasta_verificacion = int(tiempo_viaje * 0.8)
+            primera_verificacion = fecha_obj + timedelta(hours=horas_hasta_verificacion)
             
             # Si ya pasó ese tiempo, verificar inmediatamente
             if primera_verificacion < datetime.now():
+                logger.warning(f"⚠️ El 80% del tiempo ya pasó, verificar inmediatamente")
                 primera_verificacion = datetime.now() + timedelta(minutes=5)
             
-            logger.info(f"📅 Primera verificación inteligente en {horas_hasta_llegada}h: {primera_verificacion}")
+            logger.info(
+                f"📅 Primera verificación inteligente programada:\n"
+                f"   - Tiempo total viaje: {tiempo_viaje}h\n"
+                f"   - Esperar hasta 80%: {horas_hasta_verificacion}h\n"
+                f"   - Próxima verificación: {primera_verificacion}"
+            )
             return primera_verificacion
         
-        # Verificaciones subsiguientes: cada 2 horas
+        # ✅ Verificaciones subsiguientes: cada 2 horas
         proxima = datetime.now() + timedelta(hours=HORAS_ENTRE_VERIFICACIONES)
         logger.info(f"📅 Verificación subsiguiente en {HORAS_ENTRE_VERIFICACIONES}h: {proxima}")
         return proxima
