@@ -85,6 +85,7 @@ def calcular_proxima_verificacion(
     """
     try:
         estado_upper = estado_actual.upper() if estado_actual else ""
+        ahora = datetime.now()
         
         # ✅ PASO 1: Si ya llegó a destino, NO programar más verificaciones
         if "RECLAME EN OFICINA" in estado_upper or "ENTREGADA" in estado_upper:
@@ -93,7 +94,7 @@ def calcular_proxima_verificacion(
         
         # ✅ PASO 2: Si aún NO está en "DESPACHO NACIONAL BUSES", verificar cada 30 minutos
         if "DESPACHO NACIONAL BUSES" not in estado_upper:
-            proxima = datetime.now() + timedelta(minutes=30)
+            proxima = ahora + timedelta(minutes=30)
             logger.info(f"⏳ Guía sin despachar todavía, verificar en 30 minutos: {proxima}")
             logger.info(f"📍 Estado actual: {estado_actual}")
             return proxima
@@ -111,9 +112,13 @@ def calcular_proxima_verificacion(
                 if "DESPACHO NACIONAL BUSES" in detalle:
                     fecha_str = registro.get('fecha')
                     if fecha_str:
-                        fecha_despacho = parsear_fecha_admision(fecha_str)
-                        if fecha_despacho:
-                            logger.info(f"✅ Fecha real de despacho encontrada: {fecha_despacho}")
+                        fecha_despacho_local = parsear_fecha_admision(fecha_str)
+                        if fecha_despacho_local:
+                            # ✅ CORRECCIÓN CRÍTICA: Convertir hora Colombia (UTC-5) a UTC
+                            # La trazabilidad viene en hora local Colombia, el servidor usa UTC
+                            fecha_despacho = fecha_despacho_local + timedelta(hours=5)
+                            logger.info(f"✅ Fecha real de despacho encontrada (hora local Colombia): {fecha_despacho_local}")
+                            logger.info(f"✅ Convertida a UTC para el servidor: {fecha_despacho}")
                             logger.info(f"   (Extraída de trazabilidad: {fecha_str})")
                             break
         
@@ -121,7 +126,7 @@ def calcular_proxima_verificacion(
         if not fecha_despacho:
             logger.warning("⚠️ No se encontró fecha de despacho en trazabilidad")
             logger.warning("⚠️ Usando fecha/hora actual como fallback")
-            fecha_despacho = datetime.now()
+            fecha_despacho = ahora
         
         # Obtener tiempo de viaje (maneja automáticamente departamentos)
         tiempo_viaje = obtener_tiempo_viaje(origen, destino)
@@ -129,10 +134,13 @@ def calcular_proxima_verificacion(
         
         # Calcular cuándo debería llegar (100% del tiempo)
         tiempo_llegada_esperado = fecha_despacho + timedelta(hours=tiempo_viaje)
-        logger.info(f"🎯 Hora de llegada esperada: {tiempo_llegada_esperado}")
+        ahora_utc = datetime.now()
+        
+        logger.info(f"⏰ Hora actual del servidor (UTC): {ahora_utc}")
+        logger.info(f"🎯 Hora de llegada esperada (UTC): {tiempo_llegada_esperado}")
         
         # ✅ CASO 1: Si YA PASÓ el 100% del tiempo (guía retrasada)
-        if datetime.now() > tiempo_llegada_esperado:
+        if ahora_utc > tiempo_llegada_esperado:
             logger.warning(f"⚠️ El tiempo estimado de viaje (100%) ya pasó completo")
             logger.warning(f"⏰ Debió llegar a las {tiempo_llegada_esperado}, pero aún no llegó")
             logger.info(f"🔄 Guía retrasada - Verificando cada 1 HORA")
