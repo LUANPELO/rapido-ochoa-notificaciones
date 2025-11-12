@@ -152,12 +152,12 @@ def enviar_push_notification(
     datos_extra: dict = None
 ) -> bool:
     """
-    ✅ FUNCIÓN CORREGIDA - Envía notificación push usando OneSignal User ID
+    ✅ FUNCIÓN CORREGIDA - Envía notificación push usando OneSignal Player ID (API V1)
     
-    CRÍTICO: Usa 'include_aliases' con 'onesignal_id' para la API v5 de OneSignal
+    IMPORTANTE: Usa 'include_player_ids' compatible con el registro via API V1 (/players)
     
     Args:
-        onesignal_user_id: OneSignal User ID (UUID formato: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+        onesignal_user_id: OneSignal Player ID (UUID formato: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
         titulo: Título de la notificación
         mensaje: Mensaje de la notificación
         datos_extra: Datos adicionales para la app (opcional)
@@ -174,33 +174,31 @@ def enviar_push_notification(
         
         # Validar que el user_id no esté vacío
         if not onesignal_user_id or onesignal_user_id.strip() == "":
-            logger.error("❌ OneSignal User ID está vacío")
+            logger.error("❌ OneSignal Player ID está vacío")
             return False
         
-        # ✅ Validar formato UUID del User ID
+        # ✅ Validar formato UUID del Player ID
         uuid_regex = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
         if not re.match(uuid_regex, onesignal_user_id, re.IGNORECASE):
-            logger.warning(f"⚠️ User ID con formato inválido: {onesignal_user_id}")
+            logger.warning(f"⚠️ Player ID con formato inválido: {onesignal_user_id}")
             return False
         
         logger.info(f"📲 Enviando push OneSignal: {titulo}")
-        logger.info(f"🎯 Destinatario: {onesignal_user_id}")
+        logger.info(f"🎯 Destinatario (Player ID): {onesignal_user_id}")
         
         headers = {
             "Authorization": f"Basic {ONESIGNAL_API_KEY}",
             "Content-Type": "application/json; charset=utf-8"
         }
         
-        # ✅✅ CRÍTICO: USAR include_aliases CON onesignal_id
-        # Esta es la forma correcta para la API v5 de OneSignal
+        # ✅✅ CORRECCIÓN CRÍTICA: Usar include_player_ids para API V1
+        # Esto es compatible con el registro via /api/v1/players
         payload = {
             "app_id": ONESIGNAL_APP_ID,
-            "target_channel": "push",
             
-            # ✅ Usar aliases en lugar de subscription_ids o player_ids
-            "include_aliases": {
-                "onesignal_id": [onesignal_user_id]
-            },
+            # ✅ USAR include_player_ids en lugar de include_aliases
+            # Esto funciona con el player_id devuelto por POST /players
+            "include_player_ids": [onesignal_user_id],
             
             "headings": {"en": titulo},
             "contents": {"en": mensaje},
@@ -211,6 +209,8 @@ def enviar_push_notification(
         if datos_extra:
             payload["data"] = datos_extra
             logger.info(f"📦 Datos extra incluidos: {datos_extra}")
+        
+        logger.info(f"📡 Enviando a OneSignal API v1/notifications...")
         
         response = requests.post(
             "https://onesignal.com/api/v1/notifications",
@@ -226,9 +226,11 @@ def enviar_push_notification(
             if recipients > 0:
                 logger.info(f"✅ Push enviado exitosamente via OneSignal")
                 logger.info(f"📊 Recipients: {recipients}")
+                logger.info(f"📋 Notification ID: {result.get('id', 'N/A')}")
                 return True
             else:
-                logger.warning(f"⚠️ OneSignal: No se pudo enviar (sin recipients): {result}")
+                logger.warning(f"⚠️ OneSignal: No se pudo enviar (sin recipients)")
+                logger.warning(f"📄 Response completo: {result}")
                 return False
         else:
             logger.error(f"❌ Error HTTP al enviar push: {response.status_code}")
