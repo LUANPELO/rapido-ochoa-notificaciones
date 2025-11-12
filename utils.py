@@ -132,8 +132,8 @@ def calcular_proxima_verificacion(
         tiempo_llegada_esperado = fecha_despacho + timedelta(hours=tiempo_viaje)
         ahora_utc = datetime.now()
         
-        logger.info(f"⏰ Hora actual del servidor (UTC): {ahora_utc}")
-        logger.info(f"🎯 Hora de llegada esperada (UTC): {tiempo_llegada_esperado}")
+        logger.info(f"⏰ Hora actual del servidor: {ahora_utc}")
+        logger.info(f"🎯 Hora de llegada esperada: {tiempo_llegada_esperado}")
         
         # ✅ CASO 1: Si YA PASÓ el 100% del tiempo (guía retrasada)
         if ahora_utc > tiempo_llegada_esperado:
