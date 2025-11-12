@@ -5,7 +5,7 @@ Funciones auxiliares del sistema
 import requests
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from config import (
     RASTREO_API_URL, 
     ONESIGNAL_API_KEY,
@@ -60,7 +60,8 @@ def calcular_proxima_verificacion(
     origen: str,
     destino: str,
     fecha_admision: str,
-    verificaciones_realizadas: int = 0
+    verificaciones_realizadas: int = 0,
+    trazabilidad: List[Dict] = None
 ) -> Optional[datetime]:
     """
     Calcula cuándo debe realizarse la próxima verificación de una guía
@@ -77,6 +78,7 @@ def calcular_proxima_verificacion(
         destino: Ciudad destino (puede incluir departamento)
         fecha_admision: Fecha de admisión (formato: "2025/10/03 13:07")
         verificaciones_realizadas: Número de verificaciones ya hechas
+        trazabilidad: Lista con el historial de estados y fechas
     
     Returns:
         Datetime de la próxima verificación o None si ya llegó
@@ -99,14 +101,31 @@ def calcular_proxima_verificacion(
         # ✅ PASO 3: Ya está en "DESPACHO NACIONAL BUSES", usar estrategia inteligente
         logger.info(f"🚛 Guía DESPACHADA - Iniciando cálculo de tiempo estimado")
         
+        # ✅ BUSCAR LA FECHA REAL DEL DESPACHO EN LA TRAZABILIDAD
+        fecha_despacho = None
+        
+        if trazabilidad:
+            logger.info(f"🔍 Buscando fecha real de despacho en trazabilidad...")
+            for registro in trazabilidad:
+                detalle = registro.get('detalle', '').upper()
+                if "DESPACHO NACIONAL BUSES" in detalle:
+                    fecha_str = registro.get('fecha')
+                    if fecha_str:
+                        fecha_despacho = parsear_fecha_admision(fecha_str)
+                        if fecha_despacho:
+                            logger.info(f"✅ Fecha real de despacho encontrada: {fecha_despacho}")
+                            logger.info(f"   (Extraída de trazabilidad: {fecha_str})")
+                            break
+        
+        # Si no se encontró la fecha en trazabilidad, usar ahora como fallback
+        if not fecha_despacho:
+            logger.warning("⚠️ No se encontró fecha de despacho en trazabilidad")
+            logger.warning("⚠️ Usando fecha/hora actual como fallback")
+            fecha_despacho = datetime.now()
+        
         # Obtener tiempo de viaje (maneja automáticamente departamentos)
         tiempo_viaje = obtener_tiempo_viaje(origen, destino)
         logger.info(f"⏱️ Tiempo estimado de viaje: {tiempo_viaje} horas")
-        
-        # ✅ CORRECCIÓN CRÍTICA: Usar AHORA como punto de partida (momento del despacho)
-        # No la fecha de admisión, porque puede haber estado días en bodega
-        fecha_despacho = datetime.now()
-        logger.info(f"🚛 Fecha de despacho (detectada ahora): {fecha_despacho}")
         
         # Calcular cuándo debería llegar (100% del tiempo)
         tiempo_llegada_esperado = fecha_despacho + timedelta(hours=tiempo_viaje)
@@ -129,6 +148,7 @@ def calcular_proxima_verificacion(
         if verificaciones_realizadas == 0 and datetime.now() < hora_90_porciento:
             logger.info(
                 f"📅 Primera verificación programada al 90%:\n"
+                f"   - Fecha despacho: {fecha_despacho}\n"
                 f"   - Tiempo total viaje: {tiempo_viaje}h\n"
                 f"   - Esperar hasta 90%: {horas_hasta_90:.1f}h\n"
                 f"   - Próxima verificación: {hora_90_porciento}"
@@ -139,8 +159,9 @@ def calcular_proxima_verificacion(
         # O es una verificación subsiguiente
         # En ambos casos: verificar cada 30 MINUTOS
         proxima = datetime.now() + timedelta(minutes=30)
+        tiempo_restante = (tiempo_llegada_esperado - datetime.now()).total_seconds() / 3600
         logger.info(f"📅 Verificación cada 30 MINUTOS: {proxima}")
-        logger.info(f"⏱️ Tiempo restante hasta llegada esperada: {(tiempo_llegada_esperado - datetime.now()).total_seconds() / 3600:.1f}h")
+        logger.info(f"⏱️ Tiempo restante hasta llegada esperada: {tiempo_restante:.1f}h")
         return proxima
         
     except Exception as e:
