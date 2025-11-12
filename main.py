@@ -5,10 +5,10 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 import logging
 import os
-import requests  # ← AGREGADO
+import requests
 
 from database import SessionLocal, init_db, Suscripcion, HistorialVerificacion
-from config import TIEMPOS_VIAJE, CIUDADES_NORMALIZE, ONESIGNAL_API_KEY, ONESIGNAL_APP_ID  # ← AGREGADO
+from config import TIEMPOS_VIAJE, CIUDADES_NORMALIZE, ONESIGNAL_API_KEY, ONESIGNAL_APP_ID
 from utils import consultar_guia_rastreo, enviar_push_notification, calcular_proxima_verificacion
 
 logging.basicConfig(level=logging.INFO)
@@ -62,9 +62,7 @@ class RegistroDispositivoRequest(BaseModel):
 # ===== FUNCIONES AUXILIARES =====
 
 def guia_llego_a_destino(estado: str) -> bool:
-    """
-    Detecta si una guía llegó a su destino final.
-    """
+    """Detecta si una guía llegó a su destino final."""
     if not estado:
         return False
     
@@ -80,9 +78,7 @@ def guia_llego_a_destino(estado: str) -> bool:
     return any(estado_destino in estado_normalizado for estado_destino in estados_llegada)
 
 def debe_continuar_verificando(estado: str) -> bool:
-    """
-    Determina si se debe seguir verificando esta guía.
-    """
+    """Determina si se debe seguir verificando esta guía."""
     if not estado:
         return True
     
@@ -150,30 +146,6 @@ def root():
 async def registrar_dispositivo(data: RegistroDispositivoRequest):
     """
     🔒 ENDPOINT SEGURO: Registra un dispositivo en OneSignal desde el backend.
-    
-    Flutter envía los datos del dispositivo (FCM token), el backend los registra
-    en OneSignal usando la API key que está en variables de entorno.
-    
-    SEGURIDAD CRÍTICA: La API key de OneSignal NUNCA sale del backend.
-    
-    Args:
-        data: Información del dispositivo
-            - device_type: 0=iOS, 1=Android, 2=Web
-            - identifier: Token FCM del dispositivo
-            - language: Idioma (default: "es")
-            - timezone: Zona horaria en segundos (default: -18000 para Colombia UTC-5)
-    
-    Returns:
-        {
-            "success": true,
-            "onesignal_user_id": "uuid-del-usuario",
-            "message": "Dispositivo registrado exitosamente"
-        }
-    
-    Raises:
-        HTTPException 400: Token FCM inválido o error de validación
-        HTTPException 500: OneSignal no configurado o error interno
-        HTTPException 504: Timeout conectando con OneSignal
     """
     try:
         logger.info("=" * 60)
@@ -399,11 +371,13 @@ async def suscribir_guia(data: SuscripcionCreate, background_tasks: BackgroundTa
             destinatario=info_guia.get('destinatario_nombre')
         )
         
+        # ✅ CORRECCIÓN CRÍTICA: Pasar la trazabilidad
         proxima = calcular_proxima_verificacion(
             estado_actual=nueva_suscripcion.estado_actual,
             origen=nueva_suscripcion.origen,
             destino=nueva_suscripcion.destino,
-            fecha_admision=nueva_suscripcion.fecha_admision
+            fecha_admision=nueva_suscripcion.fecha_admision,
+            trazabilidad=info_guia.get('trazabilidad')  # ← NUEVO
         )
         nueva_suscripcion.proxima_verificacion = proxima
         
@@ -520,8 +494,6 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                 suscripcion.estado_actual = estado_nuevo
                 suscripcion.ultima_verificacion = ahora
                 
-                logger.info(f"📊 Datos extra incluidos: {info_guia.get('datos_extra', {})}")
-                
                 if guia_llego_a_destino(estado_nuevo):
                     logger.info(f"🎉 Guia {suscripcion.numero_guia} llego a destino! Estado: {estado_nuevo}")
                     
@@ -551,12 +523,14 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                     desactivadas_por_estado_final += 1
                 
                 else:
+                    # ✅ CORRECCIÓN CRÍTICA: Pasar la trazabilidad
                     proxima = calcular_proxima_verificacion(
                         estado_actual=estado_nuevo,
                         origen=suscripcion.origen,
                         destino=suscripcion.destino,
                         fecha_admision=suscripcion.fecha_admision,
-                        verificaciones_realizadas=suscripcion.verificaciones_realizadas + 1
+                        verificaciones_realizadas=suscripcion.verificaciones_realizadas + 1,
+                        trazabilidad=info_guia.get('trazabilidad')  # ← NUEVO
                     )
                     suscripcion.proxima_verificacion = proxima
                     logger.info(f"📅 Proxima verificacion en: {proxima}")
@@ -654,9 +628,7 @@ def health_check():
 
 @app.get("/api/suscripciones/user/{onesignal_user_id}")
 def obtener_suscripciones_por_usuario(onesignal_user_id: str):
-    """
-    Obtiene todas las suscripciones activas de un usuario
-    """
+    """Obtiene todas las suscripciones activas de un usuario"""
     db = SessionLocal()
     try:
         suscripciones = db.query(Suscripcion).filter(
