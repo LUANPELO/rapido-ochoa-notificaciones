@@ -11,8 +11,8 @@ from config import (
     ONESIGNAL_API_KEY,
     ONESIGNAL_APP_ID,
     HORAS_ENTRE_VERIFICACIONES,
-    obtener_tiempo_viaje,  # ✅ IMPORTAR de config
-    limpiar_nombre_ciudad  # ✅ IMPORTAR de config
+    obtener_tiempo_viaje,
+    limpiar_nombre_ciudad
 )
 
 logger = logging.getLogger(__name__)
@@ -65,12 +65,11 @@ def calcular_proxima_verificacion(
     """
     Calcula cuándo debe realizarse la próxima verificación de una guía
     
-    ⚠️ LÓGICA CRÍTICA: El timer del 80% SOLO inicia cuando el estado es "DESPACHO NACIONAL BUSES"
-    
-    Estrategia inteligente:
+    ⚠️ LÓGICA OPTIMIZADA:
     1. Espera hasta detectar "DESPACHO NACIONAL BUSES" específicamente
-    2. Primera verificación DESPUÉS del despacho: 80% del tiempo estimado de viaje
-    3. Siguientes: cada 2 horas hasta encontrar "RECLAME EN OFICINA"
+    2. Primera verificación DESPUÉS del despacho: 90% del tiempo estimado de viaje
+    3. Siguientes: cada 30 minutos hasta encontrar "RECLAME EN OFICINA"
+    4. Si ya pasó el 90% al momento de suscribirse: verifica cada 1 hora
     
     Args:
         estado_actual: Estado actual de la guía
@@ -90,10 +89,10 @@ def calcular_proxima_verificacion(
             logger.info("📦 Guía ya está en RECLAME EN OFICINA, no programar verificaciones")
             return None
         
-        # ✅ PASO 2: Si aún NO está en "DESPACHO NACIONAL BUSES", verificar en 2 horas
+        # ✅ PASO 2: Si aún NO está en "DESPACHO NACIONAL BUSES", verificar cada 30 minutos
         if "DESPACHO NACIONAL BUSES" not in estado_upper:
-            proxima = datetime.now() + timedelta(hours=2)
-            logger.info(f"⏳ Guía sin despachar todavía, verificar en 2 horas: {proxima}")
+            proxima = datetime.now() + timedelta(minutes=30)
+            logger.info(f"⏳ Guía sin despachar todavía, verificar en 30 minutos: {proxima}")
             logger.info(f"📍 Estado actual: {estado_actual}")
             return proxima
         
@@ -104,43 +103,50 @@ def calcular_proxima_verificacion(
         tiempo_viaje = obtener_tiempo_viaje(origen, destino)
         logger.info(f"⏱️ Tiempo estimado de viaje: {tiempo_viaje} horas")
         
-        # ✅ Primera verificación después del despacho: 80% del tiempo estimado
-        if verificaciones_realizadas == 0 or verificaciones_realizadas == 1:
-            # Calcular tiempo desde admisión
-            try:
-                fecha_obj = datetime.strptime(fecha_admision, "%Y/%m/%d %H:%M")
-                logger.info(f"📅 Fecha de admisión: {fecha_obj}")
-            except:
-                # Si no se puede parsear, usar hora actual
-                fecha_obj = datetime.now()
-                logger.warning(f"⚠️ No se pudo parsear fecha {fecha_admision}, usando hora actual")
-            
-            # Calcular cuándo debería llegar (80% del tiempo total)
-            horas_hasta_verificacion = int(tiempo_viaje * 0.8)
-            primera_verificacion = fecha_obj + timedelta(hours=horas_hasta_verificacion)
-            
-            # Si ya pasó ese tiempo, verificar inmediatamente
-            if primera_verificacion < datetime.now():
-                logger.warning(f"⚠️ El 80% del tiempo ya pasó, verificar inmediatamente")
-                primera_verificacion = datetime.now() + timedelta(minutes=5)
-            
-            logger.info(
-                f"📅 Primera verificación inteligente programada:\n"
-                f"   - Tiempo total viaje: {tiempo_viaje}h\n"
-                f"   - Esperar hasta 80%: {horas_hasta_verificacion}h\n"
-                f"   - Próxima verificación: {primera_verificacion}"
-            )
-            return primera_verificacion
+        # ✅ CORRECCIÓN CRÍTICA: Usar AHORA como punto de partida (momento del despacho)
+        # No la fecha de admisión, porque puede haber estado días en bodega
+        fecha_despacho = datetime.now()
+        logger.info(f"🚛 Fecha de despacho (detectada ahora): {fecha_despacho}")
         
-        # ✅ Verificaciones subsiguientes: cada 2 horas
-        proxima = datetime.now() + timedelta(hours=HORAS_ENTRE_VERIFICACIONES)
-        logger.info(f"📅 Verificación subsiguiente en {HORAS_ENTRE_VERIFICACIONES}h: {proxima}")
+        # Calcular cuándo debería llegar (100% del tiempo)
+        tiempo_llegada_esperado = fecha_despacho + timedelta(hours=tiempo_viaje)
+        logger.info(f"🎯 Hora de llegada esperada: {tiempo_llegada_esperado}")
+        
+        # ✅ CASO 1: Si YA PASÓ el 100% del tiempo (guía retrasada)
+        if datetime.now() > tiempo_llegada_esperado:
+            logger.warning(f"⚠️ El tiempo estimado de viaje (100%) ya pasó completo")
+            logger.warning(f"⏰ Debió llegar a las {tiempo_llegada_esperado}, pero aún no llegó")
+            logger.info(f"🔄 Guía retrasada - Verificando cada 1 HORA")
+            proxima = datetime.now() + timedelta(hours=1)
+            logger.info(f"📅 Próxima verificación: {proxima}")
+            return proxima
+        
+        # ✅ CASO 2: Calcular el 90% del tiempo
+        horas_hasta_90 = tiempo_viaje * 0.9
+        hora_90_porciento = fecha_despacho + timedelta(hours=horas_hasta_90)
+        
+        # Si es la primera verificación y aún NO ha llegado al 90%
+        if verificaciones_realizadas == 0 and datetime.now() < hora_90_porciento:
+            logger.info(
+                f"📅 Primera verificación programada al 90%:\n"
+                f"   - Tiempo total viaje: {tiempo_viaje}h\n"
+                f"   - Esperar hasta 90%: {horas_hasta_90:.1f}h\n"
+                f"   - Próxima verificación: {hora_90_porciento}"
+            )
+            return hora_90_porciento
+        
+        # ✅ CASO 3: Ya pasó el 90% pero NO el 100% (entre 90% y 100%)
+        # O es una verificación subsiguiente
+        # En ambos casos: verificar cada 30 MINUTOS
+        proxima = datetime.now() + timedelta(minutes=30)
+        logger.info(f"📅 Verificación cada 30 MINUTOS: {proxima}")
+        logger.info(f"⏱️ Tiempo restante hasta llegada esperada: {(tiempo_llegada_esperado - datetime.now()).total_seconds() / 3600:.1f}h")
         return proxima
         
     except Exception as e:
         logger.error(f"❌ Error calculando próxima verificación: {e}")
-        # En caso de error, verificar en 2 horas
-        return datetime.now() + timedelta(hours=2)
+        # En caso de error, verificar en 30 minutos
+        return datetime.now() + timedelta(minutes=30)
 
 
 # ============ ONESIGNAL PUSH NOTIFICATIONS ============
