@@ -112,13 +112,9 @@ def calcular_proxima_verificacion(
                 if "DESPACHO NACIONAL BUSES" in detalle:
                     fecha_str = registro.get('fecha')
                     if fecha_str:
-                        fecha_despacho_local = parsear_fecha_admision(fecha_str)
-                        if fecha_despacho_local:
-                            # ✅ CORRECCIÓN CRÍTICA: Convertir hora Colombia (UTC-5) a UTC
-                            # La trazabilidad viene en hora local Colombia, el servidor usa UTC
-                            fecha_despacho = fecha_despacho_local + timedelta(hours=5)
-                            logger.info(f"✅ Fecha real de despacho encontrada (hora local Colombia): {fecha_despacho_local}")
-                            logger.info(f"✅ Convertida a UTC para el servidor: {fecha_despacho}")
+                        fecha_despacho = parsear_fecha_admision(fecha_str)
+                        if fecha_despacho:
+                            logger.info(f"✅ Fecha real de despacho encontrada: {fecha_despacho}")
                             logger.info(f"   (Extraída de trazabilidad: {fecha_str})")
                             break
         
