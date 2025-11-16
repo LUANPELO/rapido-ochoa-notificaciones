@@ -64,8 +64,8 @@ TIEMPOS_VIAJE = {
     ("TOLU", "MEDELLIN"): 11,
     ("MEDELLIN", "QUIBDO"): 11,
     ("QUIBDO", "MEDELLIN"): 11,
-    ("MEDELLIN", "RIOHACHA"): 16,
-    ("RIOHACHA", "MEDELLIN"): 16,
+    ("MEDELLIN", "RIOHACHA"): 21,
+    ("RIOHACHA", "MEDELLIN"): 21,
     ("MEDELLIN", "SOLEDAD"): 16,
     ("SOLEDAD", "MEDELLIN"): 16,
     
