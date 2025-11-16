@@ -72,6 +72,12 @@ def calcular_proxima_verificacion(
     3. Siguientes: cada 30 minutos hasta encontrar "RECLAME EN OFICINA"
     4. Si ya pasó el 100% del tiempo: verifica cada 1 hora (guía retrasada)
     
+    ⚠️ ZONA HORARIA:
+    - La trazabilidad viene en hora Colombia (UTC-5)
+    - El servidor Render trabaja en UTC
+    - Esta función convierte todo a hora Colombia para cálculos
+    - Devuelve fechas en UTC para guardar en la BD
+    
     Args:
         estado_actual: Estado actual de la guía
         origen: Ciudad origen (puede incluir departamento)
@@ -81,11 +87,18 @@ def calcular_proxima_verificacion(
         trazabilidad: Lista con el historial de estados y fechas
     
     Returns:
-        Datetime de la próxima verificación o None si ya llegó
+        Datetime de la próxima verificación (en UTC) o None si ya llegó
     """
     try:
         estado_upper = estado_actual.upper() if estado_actual else ""
-        ahora = datetime.now()
+        
+        # ✅ CRÍTICO: Convertir hora UTC del servidor a hora Colombia (UTC-5)
+        # El servidor trabaja en UTC, pero la trazabilidad está en hora Colombia
+        ahora_utc = datetime.now()
+        ahora_colombia = ahora_utc - timedelta(hours=5)
+        
+        logger.info(f"⏰ Hora servidor UTC: {ahora_utc}")
+        logger.info(f"🇨🇴 Hora Colombia: {ahora_colombia}")
         
         # ✅ PASO 1: Si ya llegó a destino, NO programar más verificaciones
         if "RECLAME EN OFICINA" in estado_upper or "ENTREGADA" in estado_upper:
@@ -94,16 +107,18 @@ def calcular_proxima_verificacion(
         
         # ✅ PASO 2: Si aún NO está en "DESPACHO NACIONAL BUSES", verificar cada 30 minutos
         if "DESPACHO NACIONAL BUSES" not in estado_upper:
-            proxima = ahora + timedelta(minutes=30)
-            logger.info(f"⏳ Guía sin despachar todavía, verificar en 30 minutos: {proxima}")
+            proxima_colombia = ahora_colombia + timedelta(minutes=30)
+            proxima_utc = proxima_colombia + timedelta(hours=5)
+            logger.info(f"⏳ Guía sin despachar todavía, verificar en 30 minutos")
             logger.info(f"📍 Estado actual: {estado_actual}")
-            return proxima
+            logger.info(f"📅 Próxima verificación (Colombia): {proxima_colombia}")
+            return proxima_utc
         
         # ✅ PASO 3: Ya está en "DESPACHO NACIONAL BUSES", usar estrategia inteligente
         logger.info(f"🚛 Guía DESPACHADA - Iniciando cálculo de tiempo estimado")
         
         # ✅ BUSCAR LA FECHA REAL DEL DESPACHO EN LA TRAZABILIDAD
-        fecha_despacho = None
+        fecha_despacho_colombia = None
         
         if trazabilidad:
             logger.info(f"🔍 Buscando fecha real de despacho en trazabilidad...")
@@ -112,65 +127,74 @@ def calcular_proxima_verificacion(
                 if "DESPACHO NACIONAL BUSES" in detalle:
                     fecha_str = registro.get('fecha')
                     if fecha_str:
-                        fecha_despacho = parsear_fecha_admision(fecha_str)
-                        if fecha_despacho:
-                            logger.info(f"✅ Fecha real de despacho encontrada: {fecha_despacho}")
+                        fecha_despacho_colombia = parsear_fecha_admision(fecha_str)
+                        if fecha_despacho_colombia:
+                            logger.info(f"✅ Fecha real de despacho encontrada (Colombia): {fecha_despacho_colombia}")
+                            logger.info(f"   (Extraída de trazabilidad: {fecha_str})")
                             break
         
         # Si no se encontró la fecha en trazabilidad, usar ahora como fallback
-        if not fecha_despacho:
+        if not fecha_despacho_colombia:
             logger.warning("⚠️ No se encontró fecha de despacho en trazabilidad")
             logger.warning("⚠️ Usando fecha/hora actual como fallback")
-            fecha_despacho = ahora
+            fecha_despacho_colombia = ahora_colombia
         
         # Obtener tiempo de viaje (maneja automáticamente departamentos)
         tiempo_viaje = obtener_tiempo_viaje(origen, destino)
         logger.info(f"⏱️ Tiempo estimado de viaje: {tiempo_viaje} horas")
         
-        # Calcular cuándo debería llegar (100% del tiempo)
-        tiempo_llegada_esperado = fecha_despacho + timedelta(hours=tiempo_viaje)
+        # Calcular cuándo debería llegar (100% del tiempo) - TODO EN HORA COLOMBIA
+        tiempo_llegada_esperado_colombia = fecha_despacho_colombia + timedelta(hours=tiempo_viaje)
         
-        logger.info(f"⏰ Hora actual del servidor: {ahora}")
-        logger.info(f"🎯 Hora de llegada esperada: {tiempo_llegada_esperado}")
+        logger.info(f"🎯 Hora de llegada esperada (Colombia): {tiempo_llegada_esperado_colombia}")
         
         # ✅ CASO 1: Si YA PASÓ el 100% del tiempo (guía retrasada)
-        if ahora > tiempo_llegada_esperado:
+        if ahora_colombia > tiempo_llegada_esperado_colombia:
             logger.warning(f"⚠️ El tiempo estimado de viaje (100%) ya pasó completo")
-            logger.warning(f"⏰ Debió llegar a las {tiempo_llegada_esperado}, pero aún no llegó")
+            logger.warning(f"⏰ Debió llegar a las {tiempo_llegada_esperado_colombia} (Colombia)")
             logger.info(f"🔄 Guía retrasada - Verificando cada 1 HORA")
-            proxima = ahora + timedelta(hours=1)
-            logger.info(f"📅 Próxima verificación: {proxima}")
-            return proxima
+            
+            proxima_colombia = ahora_colombia + timedelta(hours=1)
+            proxima_utc = proxima_colombia + timedelta(hours=5)
+            logger.info(f"📅 Próxima verificación (Colombia): {proxima_colombia}")
+            return proxima_utc
         
         # ✅ CASO 2: Calcular el 90% del tiempo
         horas_hasta_90 = tiempo_viaje * 0.9
-        hora_90_porciento = fecha_despacho + timedelta(hours=horas_hasta_90)
+        hora_90_porciento_colombia = fecha_despacho_colombia + timedelta(hours=horas_hasta_90)
         
         # Si es la primera verificación y aún NO ha llegado al 90%
-        if verificaciones_realizadas == 0 and ahora < hora_90_porciento:
+        if verificaciones_realizadas == 0 and ahora_colombia < hora_90_porciento_colombia:
             logger.info(
                 f"📅 Primera verificación programada al 90%:\n"
-                f"   - Fecha despacho: {fecha_despacho}\n"
+                f"   - Fecha despacho (Colombia): {fecha_despacho_colombia}\n"
                 f"   - Tiempo total viaje: {tiempo_viaje}h\n"
                 f"   - Esperar hasta 90%: {horas_hasta_90:.1f}h\n"
-                f"   - Próxima verificación: {hora_90_porciento}"
+                f"   - Próxima verificación (Colombia): {hora_90_porciento_colombia}"
             )
-            return hora_90_porciento
+            # Convertir a UTC para guardar en BD
+            proxima_utc = hora_90_porciento_colombia + timedelta(hours=5)
+            return proxima_utc
         
         # ✅ CASO 3: Ya pasó el 90% pero NO el 100% (entre 90% y 100%)
         # O es una verificación subsiguiente
         # En ambos casos: verificar cada 30 MINUTOS
-        proxima = ahora + timedelta(minutes=30)
-        tiempo_restante = (tiempo_llegada_esperado - ahora).total_seconds() / 3600
-        logger.info(f"📅 Verificación cada 30 MINUTOS: {proxima}")
-        logger.info(f"⏱️ Tiempo restante hasta llegada esperada: {tiempo_restante:.1f}h")
-        return proxima
+        proxima_colombia = ahora_colombia + timedelta(minutes=30)
+        proxima_utc = proxima_colombia + timedelta(hours=5)
+        tiempo_restante = (tiempo_llegada_esperado_colombia - ahora_colombia).total_seconds() / 3600
+        
+        logger.info(f"📅 Verificación cada 30 MINUTOS")
+        logger.info(f"   Próxima (Colombia): {proxima_colombia}")
+        logger.info(f"⏱️ Tiempo restante hasta llegada: {tiempo_restante:.1f}h")
+        return proxima_utc
         
     except Exception as e:
         logger.error(f"❌ Error calculando próxima verificación: {e}")
         # En caso de error, verificar en 30 minutos
-        ahora = datetime.now()
-        return ahora + timedelta(minutes=30)
+        ahora_utc = datetime.now()
+        ahora_colombia = ahora_utc - timedelta(hours=5)
+        proxima_utc = ahora_colombia + timedelta(minutes=30) + timedelta(hours=5)
+        return proxima_utc
 
 
 # ============ ONESIGNAL PUSH NOTIFICATIONS ============
