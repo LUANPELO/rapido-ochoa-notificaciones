@@ -72,6 +72,8 @@ TIEMPOS_VIAJE = {
     ("SOLEDAD", "MEDELLIN"): 16,
     ("MEDELLIN", "MONTERIA"): 9,  # ← NUEVO
     ("MONTERIA", "MEDELLIN"): 9,  # ← NUEVO
+    ("MEDELLIN", "SANTA MARTA"): 18,
+    ("SANTA MARTA", "MEDELLIN"): 18,
     
     # ========== RUTAS PRINCIPALES - BARRANQUILLA ==========
     ("BARRANQUILLA", "SINCELEJO"): 4,
