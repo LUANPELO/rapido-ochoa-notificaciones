@@ -66,51 +66,51 @@ def calcular_proxima_verificacion(
     """
     Calcula cuándo debe realizarse la próxima verificación de una guía
     
-    ⚠️ LÓGICA OPTIMIZADA:
-    1. Espera hasta detectar "DESPACHO NACIONAL BUSES" específicamente
-    2. Primera verificación DESPUÉS del despacho: 90% del tiempo estimado de viaje
-    3. Siguientes: cada 30 minutos hasta encontrar "RECLAME EN OFICINA"
-    4. Si ya pasó el 100% del tiempo: verifica cada 1 hora (guía retrasada)
+    LÓGICA CORRECTA Y DEFINITIVA:
+    1. Antes del despacho: cada 30 minutos
+    2. Primera verificación después del despacho: esperar al 90% del tiempo
+    3. Entre 90% y 100% del tiempo: cada 30 minutos
+    4. Después del 100% (guía retrasada): cada 1 HORA
     
     Args:
         estado_actual: Estado actual de la guía
-        origen: Ciudad origen (puede incluir departamento)
-        destino: Ciudad destino (puede incluir departamento)
-        fecha_admision: Fecha de admisión (formato: "2025/10/03 13:07")
+        origen: Ciudad origen
+        destino: Ciudad destino
+        fecha_admision: Fecha de admisión
         verificaciones_realizadas: Número de verificaciones ya hechas
         trazabilidad: Lista con el historial de estados y fechas
     
     Returns:
-        Datetime de la próxima verificación o None si ya llegó
+        Datetime de la próxima verificación (en UTC para la BD) o None si ya llegó
     """
     try:
         estado_upper = estado_actual.upper() if estado_actual else ""
         
-        # ✅ CRÍTICO: El servidor está en UTC, convertir a hora Colombia
+        # Convertir UTC a hora Colombia para todos los cálculos
         ahora_utc = datetime.now()
         ahora_colombia = ahora_utc - timedelta(hours=5)
         
         logger.info(f"⏰ Hora servidor UTC: {ahora_utc}")
         logger.info(f"🇨🇴 Hora Colombia: {ahora_colombia}")
         
-        # ✅ PASO 1: Si ya llegó a destino, NO programar más verificaciones
+        # CASO 1: Si ya llegó a destino, NO programar más verificaciones
         if "RECLAME EN OFICINA" in estado_upper or "ENTREGADA" in estado_upper:
             logger.info("📦 Guía ya está en RECLAME EN OFICINA, no programar verificaciones")
             return None
         
-        # ✅ PASO 2: Si aún NO está en "DESPACHO NACIONAL BUSES", verificar cada 30 minutos
+        # CASO 2: Si aún NO está despachada, verificar cada 30 minutos
         if "DESPACHO NACIONAL BUSES" not in estado_upper:
             proxima_colombia = ahora_colombia + timedelta(minutes=30)
             proxima_utc = proxima_colombia + timedelta(hours=5)
-            logger.info(f"⏳ Guía sin despachar todavía, verificar en 30 minutos")
+            logger.info(f"⏳ Guía sin despachar, verificar en 30 minutos")
             logger.info(f"📍 Estado actual: {estado_actual}")
             logger.info(f"📅 Próxima verificación (Colombia): {proxima_colombia}")
             return proxima_utc
         
-        # ✅ PASO 3: Ya está en "DESPACHO NACIONAL BUSES", usar estrategia inteligente
+        # CASO 3: Ya está DESPACHADA - usar estrategia inteligente
         logger.info(f"🚛 Guía DESPACHADA - Iniciando cálculo de tiempo estimado")
         
-        # ✅ BUSCAR LA FECHA REAL DEL DESPACHO EN LA TRAZABILIDAD
+        # Buscar la fecha REAL del despacho en la trazabilidad
         fecha_despacho = None
         
         if trazabilidad:
@@ -126,37 +126,39 @@ def calcular_proxima_verificacion(
                             logger.info(f"   (Extraída de trazabilidad: {fecha_str})")
                             break
         
-        # Si no se encontró la fecha en trazabilidad, usar ahora como fallback
+        # Si no se encontró, usar ahora como fallback
         if not fecha_despacho:
             logger.warning("⚠️ No se encontró fecha de despacho en trazabilidad")
             logger.warning("⚠️ Usando fecha/hora actual como fallback")
             fecha_despacho = ahora_colombia
         
-        # Obtener tiempo de viaje (maneja automáticamente departamentos)
+        # Obtener tiempo de viaje
         tiempo_viaje = obtener_tiempo_viaje(origen, destino)
         logger.info(f"⏱️ Tiempo estimado de viaje: {tiempo_viaje} horas")
         
         # Calcular cuándo debería llegar (100% del tiempo)
         tiempo_llegada_esperado = fecha_despacho + timedelta(hours=tiempo_viaje)
-        
         logger.info(f"🎯 Hora de llegada esperada (Colombia): {tiempo_llegada_esperado}")
         
-        # ✅ CASO 1: Si YA PASÓ el 100% del tiempo (guía retrasada)
+        # CASO 4: Si YA PASÓ el 100% del tiempo (guía retrasada)
+        # LÓGICA: Verificar cada 1 HORA
         if ahora_colombia > tiempo_llegada_esperado:
             logger.warning(f"⚠️ El tiempo estimado de viaje (100%) ya pasó completo")
             logger.warning(f"⏰ Debió llegar a las {tiempo_llegada_esperado} (Colombia)")
-            logger.info(f"🔄 Guía retrasada - Verificando cada 30 MINUTOS")
+            logger.info(f"🔄 Guía retrasada - Verificando cada 1 HORA")
             
-            proxima_colombia = ahora_colombia + timedelta(minutes=30)
+            # ✅ CADA 1 HORA cuando está retrasada
+            proxima_colombia = ahora_colombia + timedelta(hours=1)
             proxima_utc = proxima_colombia + timedelta(hours=5)
             logger.info(f"📅 Próxima verificación (Colombia): {proxima_colombia}")
             return proxima_utc
         
-        # ✅ CASO 2: Calcular el 90% del tiempo
+        # CASO 5: Calcular el 90% del tiempo
         horas_hasta_90 = tiempo_viaje * 0.9
         hora_90_porciento = fecha_despacho + timedelta(hours=horas_hasta_90)
         
-        # Si es la primera verificación y aún NO ha llegado al 90%
+        # Si es la PRIMERA verificación y aún NO ha llegado al 90%
+        # LÓGICA: Esperar hasta el 90%
         if verificaciones_realizadas == 0 and ahora_colombia < hora_90_porciento:
             logger.info(
                 f"📅 Primera verificación programada al 90%:\n"
@@ -168,9 +170,9 @@ def calcular_proxima_verificacion(
             proxima_utc = hora_90_porciento + timedelta(hours=5)
             return proxima_utc
         
-        # ✅ CASO 3: Ya pasó el 90% pero NO el 100% (entre 90% y 100%)
+        # CASO 6: Ya pasó el 90% pero NO el 100% (entre 90% y 100%)
         # O es una verificación subsiguiente
-        # En ambos casos: verificar cada 30 MINUTOS
+        # LÓGICA: Verificar cada 30 MINUTOS
         proxima_colombia = ahora_colombia + timedelta(minutes=30)
         proxima_utc = proxima_colombia + timedelta(hours=5)
         tiempo_restante = (tiempo_llegada_esperado - ahora_colombia).total_seconds() / 3600
@@ -197,15 +199,16 @@ def enviar_push_notification(
     datos_extra: dict = None
 ) -> bool:
     """
-    ✅ FUNCIÓN CORREGIDA - Envía notificación push usando OneSignal Player ID (API V1)
+    Envía notificación push usando OneSignal Player ID (API V1)
     
-    IMPORTANTE: Usa 'include_player_ids' compatible con el registro via API V1 (/players)
+    CRÍTICO: USA "include_player_ids" que es compatible con API V1
+    NO usa "include_aliases" que causaba el error
     
     Args:
-        onesignal_user_id: OneSignal Player ID (UUID formato: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+        onesignal_user_id: OneSignal Player ID (UUID)
         titulo: Título de la notificación
         mensaje: Mensaje de la notificación
-        datos_extra: Datos adicionales para la app (opcional)
+        datos_extra: Datos adicionales (opcional)
     
     Returns:
         True si se envió exitosamente, False en caso contrario
@@ -214,15 +217,14 @@ def enviar_push_notification(
     
     try:
         if not ONESIGNAL_API_KEY or not ONESIGNAL_APP_ID:
-            logger.warning("⚠️ OneSignal no configurado (API_KEY o APP_ID faltante)")
+            logger.warning("⚠️ OneSignal no configurado")
             return False
         
-        # Validar que el user_id no esté vacío
         if not onesignal_user_id or onesignal_user_id.strip() == "":
             logger.error("❌ OneSignal Player ID está vacío")
             return False
         
-        # ✅ Validar formato UUID del Player ID
+        # Validar formato UUID del Player ID
         uuid_regex = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
         if not re.match(uuid_regex, onesignal_user_id, re.IGNORECASE):
             logger.warning(f"⚠️ Player ID con formato inválido: {onesignal_user_id}")
@@ -236,26 +238,20 @@ def enviar_push_notification(
             "Content-Type": "application/json; charset=utf-8"
         }
         
-        # ✅✅ CORRECCIÓN CRÍTICA: Usar include_player_ids para API V1
-        # Esto es compatible con el registro via /api/v1/players
+        # ✅ CRÍTICO: Usar include_player_ids para API V1
         payload = {
             "app_id": ONESIGNAL_APP_ID,
-            
-            # ✅ USAR include_player_ids en lugar de include_aliases
-            # Esto funciona con el player_id devuelto por POST /players
             "include_player_ids": [onesignal_user_id],
-            
             "headings": {"en": titulo},
             "contents": {"en": mensaje},
             "priority": 10
         }
         
-        # Agregar datos adicionales si existen
         if datos_extra:
             payload["data"] = datos_extra
             logger.info(f"📦 Datos extra incluidos: {datos_extra}")
         
-        logger.info(f"📡 Enviando a OneSignal API v1/notifications...")
+        logger.info(f"📡 Enviando a OneSignal API...")
         
         response = requests.post(
             "https://onesignal.com/api/v1/notifications",
@@ -269,13 +265,13 @@ def enviar_push_notification(
         if response.status_code == 200:
             recipients = result.get("recipients", 0)
             if recipients > 0:
-                logger.info(f"✅ Push enviado exitosamente via OneSignal")
+                logger.info(f"✅ Push enviado exitosamente")
                 logger.info(f"📊 Recipients: {recipients}")
                 logger.info(f"📋 Notification ID: {result.get('id', 'N/A')}")
                 return True
             else:
                 logger.warning(f"⚠️ OneSignal: No se pudo enviar (sin recipients)")
-                logger.warning(f"📄 Response completo: {result}")
+                logger.warning(f"📄 Response: {result}")
                 return False
         else:
             logger.error(f"❌ Error HTTP al enviar push: {response.status_code}")
@@ -295,19 +291,11 @@ def enviar_push_notification(
 def validar_numero_guia(numero_guia: str) -> bool:
     """
     Valida el formato del número de guía de Rápido Ochoa
-    Formato típico: E121101188 (letra seguida de números) o solo números
-    
-    Args:
-        numero_guia: Número de guía a validar
-    
-    Returns:
-        True si es válido, False en caso contrario
     """
     import re
     if not numero_guia:
         return False
     
-    # Rápido Ochoa usa formato: Letra + 8-10 dígitos, o solo números
     patron = r'^[A-Z]?\d{8,10}$'
     return bool(re.match(patron, numero_guia.upper()))
 
@@ -315,12 +303,6 @@ def validar_numero_guia(numero_guia: str) -> bool:
 def parsear_fecha_admision(fecha_str: str) -> Optional[datetime]:
     """
     Parsea la fecha de admisión del formato de Rápido Ochoa
-    
-    Args:
-        fecha_str: Fecha en formato "2025/10/03 13:07"
-    
-    Returns:
-        Objeto datetime o None si hay error
     """
     try:
         return datetime.strptime(fecha_str, "%Y/%m/%d %H:%M")
