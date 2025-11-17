@@ -3,7 +3,7 @@ name: Verificar Guías Automáticamente
 on:
   schedule:
     # Ejecutar cada 2 horas (minuto 0 de las horas pares)
-    - cron: '*/30 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch: # Permite ejecutar manualmente desde GitHub
 
 jobs:
