@@ -40,6 +40,8 @@ TIEMPOS_VIAJE = {
     ("BUCARAMANGA", "BOGOTA"): 8,
     ("BOGOTA", "TOLU"): 16,
     ("TOLU", "BOGOTA"): 16,
+    ("BOGOTA", "SOLEDAD"): 18,
+    ("SOLEDAD", "BOGOTA"): 18,
     
     # ========== RUTAS PRINCIPALES - MEDELLÍN ==========
     ("MEDELLIN", "BARRANQUILLA"): 16,
@@ -58,8 +60,8 @@ TIEMPOS_VIAJE = {
     ("PLANETA RICA", "MEDELLIN"): 10,
     ("MEDELLIN", "MAICAO"): 22,
     ("MAICAO", "MEDELLIN"): 22,
-    ("MEDELLIN", "SAHAGUN"): 10,
-    ("SAHAGUN", "MEDELLIN"): 10,
+    ("MEDELLIN", "SAHAGUN"): 9,  # ← Corregido de 10 a 9
+    ("SAHAGUN", "MEDELLIN"): 9,  # ← Corregido de 10 a 9
     ("MEDELLIN", "TOLU"): 11,
     ("TOLU", "MEDELLIN"): 11,
     ("MEDELLIN", "QUIBDO"): 11,
@@ -68,6 +70,8 @@ TIEMPOS_VIAJE = {
     ("RIOHACHA", "MEDELLIN"): 21,
     ("MEDELLIN", "SOLEDAD"): 16,
     ("SOLEDAD", "MEDELLIN"): 16,
+    ("MEDELLIN", "MONTERIA"): 9,  # ← NUEVO
+    ("MONTERIA", "MEDELLIN"): 9,  # ← NUEVO
     
     # ========== RUTAS PRINCIPALES - BARRANQUILLA ==========
     ("BARRANQUILLA", "SINCELEJO"): 4,
@@ -88,10 +92,12 @@ TIEMPOS_VIAJE = {
     ("RIOHACHA", "BARRANQUILLA"): 5,
     ("BARRANQUILLA", "YARUMAL"): 13,
     ("YARUMAL", "BARRANQUILLA"): 13,
-    ("BARRANQUILLA", "SAHAGUN"): 7,
-    ("SAHAGUN", "BARRANQUILLA"): 7,
+    ("BARRANQUILLA", "SAHAGUN"): 6,  # ← Corregido de 7 a 6
+    ("SAHAGUN", "BARRANQUILLA"): 6,  # ← Corregido de 7 a 6
     ("BARRANQUILLA", "SOLEDAD"): 1,
     ("SOLEDAD", "BARRANQUILLA"): 1,
+    ("BARRANQUILLA", "MONTERIA"): 7,  # ← NUEVO
+    ("MONTERIA", "BARRANQUILLA"): 7,  # ← NUEVO
     
     # ========== RUTAS PRINCIPALES - SOLEDAD ==========
     # (Soledad tiene las mismas rutas que Barranquilla ya que está al lado)
@@ -115,8 +121,42 @@ TIEMPOS_VIAJE = {
     ("YARUMAL", "SOLEDAD"): 13,
     ("SOLEDAD", "SAHAGUN"): 7,
     ("SAHAGUN", "SOLEDAD"): 7,
-    ("SOLEDAD", "BOGOTA"): 18,
-    ("BOGOTA", "SOLEDAD"): 18,
+    
+    # ========== RUTAS PRINCIPALES - MONTERÍA ==========
+    ("MONTERIA", "SINCELEJO"): 3,  # ← NUEVO (ya existía con 2h, corregido a 3h)
+    ("SINCELEJO", "MONTERIA"): 3,  # ← NUEVO (ya existía con 2h, corregido a 3h)
+    ("MONTERIA", "PLANETA RICA"): 2,  # ← NUEVO
+    ("PLANETA RICA", "MONTERIA"): 2,  # ← NUEVO
+    ("MONTERIA", "LA APARTADA"): 2,  # ← NUEVO
+    ("LA APARTADA", "MONTERIA"): 2,  # ← NUEVO
+    ("MONTERIA", "RIOHACHA"): 12,  # ← NUEVO
+    ("RIOHACHA", "MONTERIA"): 12,  # ← NUEVO
+    ("MONTERIA", "MAICAO"): 14,  # ← NUEVO
+    ("MAICAO", "MONTERIA"): 14,  # ← NUEVO
+    ("MONTERIA", "SANTA MARTA"): 9,  # ← NUEVO
+    ("SANTA MARTA", "MONTERIA"): 9,  # ← NUEVO
+    ("MONTERIA", "TARAZA"): 4,  # ← NUEVO
+    ("TARAZA", "MONTERIA"): 4,  # ← NUEVO
+    ("MONTERIA", "SAHAGUN"): 3,  # ← NUEVO
+    ("SAHAGUN", "MONTERIA"): 3,  # ← NUEVO
+    ("MONTERIA", "CHINU"): 2,  # ← NUEVO
+    ("CHINU", "MONTERIA"): 2,  # ← NUEVO
+    ("MONTERIA", "TOLU"): 2,
+    ("TOLU", "MONTERIA"): 2,
+    
+    # ========== RUTAS PRINCIPALES - SAHAGÚN ==========
+    ("SAHAGUN", "SINCELEJO"): 2,  # ← NUEVO
+    ("SINCELEJO", "SAHAGUN"): 2,  # ← NUEVO
+    ("SAHAGUN", "PLANETA RICA"): 2,  # ← NUEVO
+    ("PLANETA RICA", "SAHAGUN"): 2,  # ← NUEVO
+    ("SAHAGUN", "LA APARTADA"): 2,  # ← NUEVO
+    ("LA APARTADA", "SAHAGUN"): 2,  # ← NUEVO
+    ("SAHAGUN", "MAICAO"): 13,  # ← NUEVO
+    ("MAICAO", "SAHAGUN"): 13,  # ← NUEVO
+    ("SAHAGUN", "SANTA MARTA"): 8,  # ← NUEVO
+    ("SANTA MARTA", "SAHAGUN"): 8,  # ← NUEVO
+    ("SAHAGUN", "RIOHACHA"): 12,  # ← NUEVO
+    ("RIOHACHA", "SAHAGUN"): 12,  # ← NUEVO
     
     # ========== RUTAS COSTA - CAUCASIA ==========
     ("CAUCASIA", "SINCELEJO"): 4,
@@ -151,8 +191,6 @@ TIEMPOS_VIAJE = {
     # ========== RUTAS COSTA - SINCELEJO ==========
     ("SINCELEJO", "CARTAGENA"): 5,
     ("CARTAGENA", "SINCELEJO"): 5,
-    ("SINCELEJO", "MONTERIA"): 2,
-    ("MONTERIA", "SINCELEJO"): 2,
     ("SINCELEJO", "YARUMAL"): 9,
     ("YARUMAL", "SINCELEJO"): 9,
     
@@ -163,8 +201,6 @@ TIEMPOS_VIAJE = {
     ("MAICAO", "LA APARTADA"): 13,
     
     # ========== RUTAS COSTA - TOLÚ ==========
-    ("TOLU", "MONTERIA"): 2,
-    ("MONTERIA", "TOLU"): 2,
     ("TOLU", "PUERTO BERRIO"): 9,
     ("PUERTO BERRIO", "TOLU"): 9,
 }
@@ -204,6 +240,10 @@ CIUDADES_NORMALIZE = {
     "puerto berrio": "PUERTO BERRIO",
     "puerto berrío": "PUERTO BERRIO",
     "puertoberrio": "PUERTO BERRIO",
+    "taraza": "TARAZA",  # ← NUEVO
+    "tarazá": "TARAZA",  # ← NUEVO
+    "chinu": "CHINU",  # ← NUEVO
+    "chinú": "CHINU",  # ← NUEVO
     
     # Ciudades pacífico
     "tolu": "TOLU",
@@ -283,9 +323,9 @@ def obtener_tiempo_viaje(origen: str, destino: str) -> int:
         
     Examples:
         >>> obtener_tiempo_viaje("MEDELLIN (ANTIOQUIA)", "RIOHACHA (LA GUAJIRA)")
-        16
+        21
         >>> obtener_tiempo_viaje("MEDELLIN", "RIOHACHA")
-        16
+        21
         >>> obtener_tiempo_viaje("BOGOTA", "CALI")
         10
     """
