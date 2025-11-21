@@ -102,6 +102,41 @@ def debe_continuar_verificando(estado: str) -> bool:
     
     return not any(estado_final in estado_normalizado for estado_final in estados_finales)
 
+def extraer_nombre_oficina(estado: str, destino: str) -> str:
+    """
+    Extrae el nombre de la oficina del estado o usa el destino.
+    La app Flutter completará los datos con OficinasData.
+    """
+    if not estado:
+        return destino or "Oficina destino"
+    
+    estado_upper = estado.upper()
+    
+    # Buscar patrones como "RECLAME EN OFICINA BARRANQUILLA"
+    if "BARRANQUILLA" in estado_upper:
+        return "Barranquilla"
+    elif "MEDELLÍN" in estado_upper or "MEDELLIN" in estado_upper:
+        return "Medellín"
+    elif "BOGOTÁ" in estado_upper or "BOGOTA" in estado_upper:
+        return "Bogotá"
+    elif "CALI" in estado_upper:
+        return "Cali"
+    elif "CARTAGENA" in estado_upper:
+        return "Cartagena"
+    elif "MONTERÍA" in estado_upper or "MONTERIA" in estado_upper:
+        return "Montería"
+    elif "SANTA MARTA" in estado_upper:
+        return "Santa Marta"
+    elif "RIOHACHA" in estado_upper:
+        return "Riohacha"
+    elif "VALLEDUPAR" in estado_upper:
+        return "Valledupar"
+    elif "SINCELEJO" in estado_upper:
+        return "Sincelejo"
+    
+    # Si no se encuentra ciudad específica, usar destino
+    return destino or "Oficina destino"
+
 # ===== EVENTOS DE INICIO =====
 
 @app.on_event("startup")
@@ -497,15 +532,20 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                 if guia_llego_a_destino(estado_nuevo):
                     logger.info(f"🎉 Guia {suscripcion.numero_guia} llego a destino! Estado: {estado_nuevo}")
                     
+                    # ✅ AGREGAR DATOS DE OFICINA
+                    nombre_oficina = extraer_nombre_oficina(estado_nuevo, suscripcion.destino)
+                    
                     background_tasks.add_task(
                         enviar_push_notification,
                         suscripcion.onesignal_user_id,
                         "¡Tu encomienda llegó! 🎉",
-                        f"La guía {suscripcion.numero_guia} ya está disponible para recoger en oficina",
+                        f"La guía {suscripcion.numero_guia} ya está disponible para recoger en {nombre_oficina}",
                         {
-                            "numero_guia": suscripcion.numero_guia,
                             "tipo": "llegada",
-                            "estado": estado_nuevo
+                            "numero_guia": suscripcion.numero_guia,
+                            "estado": estado_nuevo,
+                            "oficina_nombre": nombre_oficina,
+                            # La app Flutter completará coordenadas/dirección/horario con OficinasData
                         }
                     )
                     
@@ -515,6 +555,7 @@ async def verificar_guias(background_tasks: BackgroundTasks):
                     notificaciones_enviadas += 1
                     
                     logger.info(f"✅ Notificación enviada para {suscripcion.numero_guia}")
+                    logger.info(f"🏢 Oficina destino: {nombre_oficina}")
                 
                 elif not debe_continuar_verificando(estado_nuevo):
                     logger.info(f"⚠️ Guia {suscripcion.numero_guia} en estado final: {estado_nuevo}")
