@@ -270,8 +270,8 @@ def enviar_push_notification(
                 logger.info(f"📋 Notification ID: {result.get('id', 'N/A')}")
                 return True
             else:
-                logger.warning(f"⚠️ OneSignal: No se pudo enviar (sin recipients)")
-                logger.warning(f"📄 Response: {result}")
+                # ✅ CAMBIADO: De warning a debug (no mostrar en logs normales)
+                logger.debug(f"OneSignal sin recipients: {result}")
                 return False
         else:
             logger.error(f"❌ Error HTTP al enviar push: {response.status_code}")
